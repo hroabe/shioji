@@ -1,0 +1,17 @@
+#!/bin/sh
+# pre-commit: guard赤のコミットを機械的に拒否する(CLAUDE.md §8 / PROCESS.md §5-4)
+# makeが無い環境(Windowsネイティブ等)ではvenvのpythonでゲート列を直接実行する。
+# Windows cp932でのUnicodeEncodeError回避のためUTF-8を強制。
+PYTHONUTF8=1
+export PYTHONUTF8
+run_guard() {
+  if command -v make >/dev/null 2>&1; then
+    make guard
+  else
+    PYBIN=python
+    [ -x .venv/bin/python ] && PYBIN=.venv/bin/python
+    [ -x .venv/Scripts/python.exe ] && PYBIN=.venv/Scripts/python.exe
+    "$PYBIN" scripts/run_gates.py
+  fi
+}
+run_guard || { echo "pre-commit: guard赤のためコミット中止 (CLAUDE.md §8)"; exit 1; }

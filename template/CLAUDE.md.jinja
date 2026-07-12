@@ -1,0 +1,119 @@
+# CLAUDE.md — {{ project_name }} エージェント契約(L0)
+
+本書はこのリポジトリで作業する全エージェント(Claude Code / OpenAI Codex / Jules / その他)への最上位契約である。他文書と矛盾する場合、常に本書が優先する。本書の編集は人間のみ。
+
+本契約は潮路(shioji)キットから生成された。各規則の設計意図は生成元の PROCESS.md を参照。プロセス設定の機械可読なSSoTは `project.yaml`。
+
+## 0. プロジェクト要約
+
+<!-- ▼INCEPTION-SLOT:S0 — INCEPTION_PROMPT.md の出力(docs/proposals/inception/CLAUDE_SECTIONS.md)から人間が転記 -->
+(インセプション未完了 — INCEPTION_PROMPT.md を実行し、確定文をここへ転記する。転記までは実装タスクを開始しない)
+<!-- ▲INCEPTION-SLOT:S0 -->
+
+## 1. 文書レイヤと優先順位
+
+| レイヤ | 文書 | 役割 | エージェント編集 |
+|---|---|---|---|
+| L0 | CLAUDE.md / AGENTS.md | 手続きの最上位契約 | 禁止 |
+| L1 | docs/spec/* | 規範(何を作るか) | 禁止(提案は docs/proposals/ へ) |
+| L2 | docs/design/* | 記述(トークン・詳細) | PRで提案可(根拠必須) |
+| L3 | TASK_INDEX.md のstatus / docs/L3/* | 運用・動的 | 更新義務 |
+
+SSoT: `docs/spec/{{ spec_slug }}_SPEC_v*.md`(インセプション後に人間が確定)。全 REQ-{{ req_prefix }}-xxx の定義はここが正。
+
+矛盾を発見したら黙って解決しない。docs/L3/ISSUES.md に記録し、上位レイヤに従って続行できるなら続行、できないなら停止して人間に報告する。
+
+## 2. 絶対規範(いかなる理由でも違反不可)
+
+1. **ゲートを欺かない**: 精度ゲート(validate_oracle)が不合格のとき、許容誤差・合格率・参照データ・テストを調整して合格させることを禁ずる。不合格の検出は成果である。原因分析をISSUESに記録して停止する(自走時は当該系統のみ停止)。
+2. **廃止REQの不使用**: project.yaml の deprecated_reqs に列挙された REQ を実装・参照しない(CIが検出する)。
+
+<!-- ▼INCEPTION-SLOT:S2 — 規範カタログ(生成元 PROCESS.md §6: N2出所台帳/N3法務/N5能力制約/N6商業倫理/N7二重化義務/N8免責固定)から採否・具体化した項を人間が転記。各項に強制装置(テスト/ゲート)を併記すること -->
+(未確定 — 転記までは上記2項のみが有効)
+<!-- ▲INCEPTION-SLOT:S2 -->
+
+## 3. ワークフロー
+
+1. `TASK_INDEX.md` から `status: todo` かつ依存が全て `done` の最小IDタスクを選ぶ。人間がIDを指定した場合はそれを優先。
+2. 着手時に status を `doing` へ更新し、ブランチ `task/T-xxx-slug` を切る(自走モード時は §3.5-1)。
+3. ロジック/エンジン系は**テストファースト**。UI系は**ゴールデン基準**(採用時 — test/golden/README.md)。
+4. 実装とテストの双方に対応REQを注記する(例: `// REQ-{{ req_prefix }}-100`、`# REQ-{{ req_prefix }}-080`)。
+5. `make ci` を全て緑にする(Windowsネイティブは §8 の直接実行)。
+6. コミット規約: `feat(scope): summary [T-xxx][REQ-{{ req_prefix }}-xxx]` + トレーラ `Agent: <agent名>`。
+7. status 更新と docs/L3/PROGRESS.md への3行記帳(行末にagent名)。昇格規則は §3.5(自走モード)に従う。
+
+不明点の扱い: 規範(L1)の解釈に迷ったら推測で進めず ISSUE 起票。実装詳細(L1の範囲内の自由度)は自律判断してよい。
+
+## 3.5 自走モード
+
+人間が「自走モード開始」を宣言したセッションでは、以下を適用する。
+
+1. **ブランチ運用**: `autopilot/<開始日>-<agent名>` の単一統合ブランチ上で連続コミットする。mainへのマージはフェーズ完了時に人間が行う。自走ブランチは1エージェント専有。
+2. **昇格規則**: 担当=A のタスクは、`make ci` 全緑を条件に status を自ら `done` へ昇格してよい。担当=A+H は準備完了時点で `review` 止まり、担当=H には触れない。
+3. **スキップ&継続**: 人間ゲート・規範解釈の疑義・環境不足に当たったタスクは、準備物(ドラフト/チェックリスト/ISSUE)を残して `blocked` にし、**全体を止めずに次の選定可能タスクへ進む**。
+4. **チェックポイント**: 各フェーズ完了時、PROGRESS.md に「CHECKPOINT: 完了タスク/残ブロッカー/人間に見てほしい点3つ以内」を記帳する。停止はしない。
+5. **完全停止条件**: (a)依存解決済みtodoが0件 (b)絶対規範(§2)と衝突する状況 (c)精度ゲート系の不合格検出(当該系統のみ停止、他系統は継続可)。停止時は最終レポートをPROGRESSに記帳。
+6. **状態の外部化**: セッション終了・コンテキスト圧縮の前に、PROGRESS.md冒頭の「次の一手」1行と未コミットゼロを必ず確保する。リポジトリが唯一の記憶である。
+7. 本モードでも §2 絶対規範・§5 人間ゲート・§6 禁止事項は一切緩和されない。
+8. **可逆判断は記録して進む**: 実装詳細のうち可逆な判断(命名・ファイル配置・内部構造・テストデータ値・軽微なリファクタ等)は問い合わせず決定し、docs/L3/DECISIONS.md に1行記録して続行する。**不可逆または外部に波及する判断**(公開名・課金・データ削除・スキーマ破壊的変更・仕様からの逸脱)は ISSUE+blocked。
+9. **試行予算(沼防止)**: 同一タスクで同種の失敗が3回続いたら沼と判定し、再現手順付きISSUE→blocked→次タスクへ。無限リトライを禁ずる。
+10. **ゴールデン初回基準**(採用時): 基準画像が存在しないテストの初回生成は自律で行ってよい(コミットに `golden-baseline` を明記し、CHECKPOINTの人間確認対象に列挙)。既存基準の変更のみ §5 の人間ゲート。
+11. **main乖離チェック**: CHECKPOINT時に origin/main との乖離を確認し、コンフリクトが予見される場合はISSUEで報告する(自走中のrebase/mergeは行わない — マージ判断は人間)。
+12. **ブランチ命名**: `autopilot/<開始日>-<agent名>`(1エージェント専有の機械的担保)。
+
+## 4. 検証ゲート(ローカル/CI共通 — 実体は project.yaml の gates 列)
+
+| ゲート | コマンド | 適用 |
+|---|---|---|
+| ゲート列一括(guard) | `python scripts/run_gates.py`(= make guard = pre-commit = CI guardrails) | 全PR |
+| REQ整合 | `python scripts/check_req_links.py`(廃止ID参照・未定義REQ・実装⇔テストリンク・status語彙) | 全PR |
+| 精度(オラクル照合) | `python scripts/validate_oracle.py --dry-run` → **人間が `--gate` へ切替**(§5) | 全PR |
+| 静的解析・単体 | `python scripts/run_gates.py --all`(project.yaml の stack.analyze / stack.test。ready_marker 不在時は自動skip) | 全PR |
+
+<!-- ▼INCEPTION-SLOT:S4 — プロジェクト固有ゲート(台帳照合・サイズ・性能等)の行を人間が追記し、project.yaml の gates にも同じ行を追加する -->
+<!-- ▲INCEPTION-SLOT:S4 -->
+
+## 5. 人間ゲート(エージェントは準備まで。実行・確定は人間のみ)
+
+- L0/L1 の編集(インセプション出力の docs/spec/ と本書スロットへの反映を含む)
+- 精度ゲートの `--dry-run`→`--gate` 切替、および oracle 許容誤差・合格率の確定
+- 参照オラクル(verification/reference/)の投入
+- アプリ本体の依存台帳(project.yaml の stack.app_manifest が指すファイル)への依存追加
+- ゴールデン**既存**基準画像の変更(採用時。`--update-goldens` は人間の明示指示時のみ。初回生成は §3.5-10 により自律可)
+- リリースタグ・ストア/本番提出
+
+<!-- ▼INCEPTION-SLOT:S5 — プロジェクト固有の人間ゲート(法務・課金・データ署名等)を人間が追記 -->
+<!-- ▲INCEPTION-SLOT:S5 -->
+
+## 6. 禁止事項(§2の運用面)
+
+- テストの skip 追加、精度閾値・ゲート条件の変更、ゴールデンの無断更新(採用時)
+- **アプリ本体の依存台帳(stack.app_manifest)への依存追加**(ISSUESで提案→人間承認後のみ)。開発ツールチェーンのPythonモジュールはこの限りではない(§8の自己修復規則に従う)
+- docs/spec/* の直接編集(提案は docs/proposals/)
+- verification/reference/ 配下の参照データの生成・改変(投入は人間ゲート)
+- サンプル/ダミーデータを実データとして扱うこと・実データ風に書き換えること
+
+## 7. ディレクトリ
+
+```
+CLAUDE.md / AGENTS.md / INITIAL_PROMPT.md / INCEPTION_PROMPT.md / TASK_INDEX.md / Makefile / project.yaml
+docs/
+  spec/      L1 仕様(編集禁止。書式は SPEC_FORMAT.md)
+  design/    L2(提案可)
+  proposals/ L1への変更提案・インセプション出力
+  L3/        PROGRESS.md / ISSUES.md / DECISIONS.md(更新義務)
+scripts/               検証スクリプト群(run_gates / check_req_links / validate_oracle)
+verification/
+  reference/           精度検証の参照データ(人間投入・エージェント改変禁止)
+  predictions/         エンジン/ロジックの決定論出力(ハーネスが生成)
+```
+
+## 8. 環境・コマンド
+
+**Python実行の標準(必須)**: リポジトリ直下の仮想環境 `.venv` を作成・有効化してから作業する。有効化後の実行を前提に、全ドキュメントのコマンドは**全OS共通で `python` と表記**する。
+- 作成・有効化 — Linux/WSL/macOS: `python3 -m venv .venv && source .venv/bin/activate` / Windowsネイティブ: `python -m venv .venv` → `.venv\Scripts\activate`
+- `.venv/` はコミットしない。CIランナーは隔離環境のためvenv不要(CIは `pip install -r requirements.txt` を使用)。
+
+**ツールチェーン依存のSSoTと自己修復(必須挙動)**: Python側の依存は `requirements.txt` が唯一の台帳。**venv不在・モジュール不足(ModuleNotFoundError等)は停止事由ではなく自己修復対象** — エージェントは自律的に (a) venvを作成し (b) `python -m pip install -r requirements.txt` を実行して復旧し、作業を続行する。新たなモジュールが必要になった場合は、requirements.txt に理由コメント付きで追記→インストール→当該タスクと同一コミットに含める。禁止: venv外へのインストール、requirements.txt を経由しない追加。※アプリ本体(stack.app_manifest)の依存は人間ゲート(§6)。
+
+コマンド: `make setup`(venv+依存+**pre-commitフック導入**)/ `make guard`(setupを内包 — ゲート列一括)/ `make ci`(guard+スタック検証)。pre-commitフックは guard赤のコミットを機械的に拒否する(フック本体は scripts/hooks/pre-commit、レビュー可能)。**Windowsネイティブではmakeを使わず `python scripts/run_gates.py [--all]` を直接実行**する。スタック未初期化の間、stack系は自動skipされ guard のみが有効。

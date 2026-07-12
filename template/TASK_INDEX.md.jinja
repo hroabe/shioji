@@ -1,0 +1,27 @@
+---
+doc: {{ req_prefix }}_TASK_INDEX
+layer: L3
+version: 0.1
+status: active
+date: 2026-07-12
+spec_ref: (インセプション後に docs/spec/{{ spec_slug }}_SPEC_v0.1.md を記入)
+---
+
+# TASK_INDEX — {{ project_name }} タスク分解
+
+**status語彙**: todo / doing / review / done / blocked。
+**担当**: A=エージェント / H=人間 / A+H=エージェント準備・人間確定。
+**依存**は「全てdone」で解除。
+statusフィールドのみエージェント更新可。行の追加・削除・DoD変更は人間。
+**A完了条件:** ユーザー操作で到達可能・ルートからの統合テスト・実画面/実出力での受入確認を含む
+
+## P0 基盤
+
+| ID | タスク(DoD要点) | REQ | 依存 | 担当 | status |
+|---|---|---|---|---|---|
+| T-001 | スタック初期化(project.yaml の ready_marker 成立・analyze/test 緑・lint設定) | — | — | A | todo |
+| T-002 | CI本配線(.github/workflows/ci.yml のスタックジョブ有効化・make ci 全緑) | — | T-001 | A | todo |
+
+## P1 以降
+
+インセプション(INCEPTION_PROMPT.md)が docs/proposals/inception/TASK_INDEX_DRAFT.md を生成し、人間が本表へ反映する。エンジン/ロジック系(テストファースト)とUI系(ゴールデン基準・採用時)を系統分離して記述すること。

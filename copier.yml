@@ -1,0 +1,40 @@
+# 潮路(shioji)— Stage1 の質問。機械的パラメータのみ(仕様の注入は Stage2 = INCEPTION_PROMPT.md)
+_min_copier_version: "9.0.0"
+_subdirectory: template
+_templates_suffix: .jinja
+_envops: # ブロックタグ行を出力に残さない(テンプレはYAML/Markdownが主なため明示固定)
+  trim_blocks: true
+  lstrip_blocks: true
+
+project_name:
+  type: str
+  help: プロジェクト名(小文字英数とハイフン。リポジトリ名と揃える。例 tsukishio)
+  placeholder: my-project
+  validator: >-
+    {% if not project_name or project_name|lower != project_name or ' ' in project_name %}
+    小文字英数とハイフンのみで入力してください
+    {% endif %}
+
+req_prefix:
+  type: str
+  help: REQ接頭辞(大文字2〜5字。例 TSU → REQ-TSU-001)
+  default: "{{ project_name[:3]|upper|replace('-', 'X') }}"
+  validator: >-
+    {% if req_prefix|upper != req_prefix or req_prefix|length < 2 or req_prefix|length > 5 %}
+    大文字2〜5字で入力してください
+    {% endif %}
+
+spec_slug:
+  type: str
+  help: 仕様書ファイル名の識別子(docs/spec/<SPEC_SLUG>_SPEC_v0.1.md)
+  default: "{{ project_name|upper|replace('-', '_') }}"
+
+stack:
+  type: str
+  help: 主スタック(検証コマンドの初期値。生成後 project.yaml でいつでも変更可)
+  default: manual
+  choices:
+    Flutter: flutter
+    Node.js: node
+    Python: python
+    その他・後で決める(T-001/T-002で設定): manual

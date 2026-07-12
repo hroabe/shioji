@@ -1,0 +1,41 @@
+---
+doc: SPEC_FORMAT
+layer: L2(書式規約 — 仕様本文はL1)
+status: active
+---
+
+# docs/spec/ の書式規約(潮路キット)
+
+本ディレクトリの仕様書はL1(規範)であり、**編集は人間のみ**。エージェントの変更提案は docs/proposals/ へ。インセプションのドラフトは docs/proposals/inception/SPEC_DRAFT.md として生成され、人間の確定を経てここへ入る。
+
+## front-matter(必須)
+
+```yaml
+---
+doc: {{ spec_slug }}_SPEC
+layer: L1
+version: 0.1
+status: active   # draft / active / review / accepted / superseded / deprecated のみ(CIが検査)
+date: YYYY-MM-DD
+---
+```
+
+## REQ表記
+
+- 形式: `REQ-{{ req_prefix }}-nnn`(3桁・一意・欠番可)。定義はこの仕様書が正(SSoT)。
+- 実装とテストの双方に注記する(CLAUDE.md §3-4)。check_req_links.py が未定義参照・廃止参照・実装⇔テスト未リンクを検査する。
+- 番号帯はインセプションで割り当てる(例: 000台=原則 / 010台=エンジン / 050台=UI / 080台=検証)。
+
+## 必須節
+
+1. 変更履歴(版間差分を箇条書き)
+2. プロダクト定義・設計原則
+3. 要件定義(REQ表 — 番号・規範文・検証方法)
+4. 検証プロトコル(CIゲートとの対応)
+5. 未決事項(番号付き。解決時は解決内容と決定者を追記)
+6. 付録A: REQ-ID一覧(現行)
+7. 付録B: 廃止REQ(理由付き)
+
+## 廃止手順
+
+REQを廃止するときは、付録Bへ移した上で **project.yaml の deprecated_reqs に番号を追加**する(人間・同一コミット)。以後、その番号への参照はCIが赤にする。

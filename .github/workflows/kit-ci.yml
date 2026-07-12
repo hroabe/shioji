@@ -1,0 +1,39 @@
+# 潮路キット自身のCI — 実体化テストが本キットの精度ゲート(CLAUDE.md 3項)。
+# ダミープロジェクト「sazanami」を copier で実体化し、生成直後に全ゲートが
+# 緑であること(0日目から緑の原則 — PROCESS.md §3)を毎pushで検証する。
+name: kit-ci
+on: [push, pull_request]
+jobs:
+  instantiate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stack: [manual, flutter]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # copier はテンプレートのgit履歴(HEAD)から複製する
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install copier pyyaml
+      - name: 実体化(stack=${{ matrix.stack }})
+        run: >-
+          copier copy --defaults
+          --data project_name=sazanami
+          --data req_prefix=SZN
+          --data stack=${{ matrix.stack }}
+          . /tmp/sazanami
+      - name: 生成直後に全ゲート緑(0日目から緑)
+        working-directory: /tmp/sazanami
+        run: |
+          pip install -r requirements.txt
+          python scripts/run_gates.py --all
+      - name: 汎用スクリプトの selftest
+        working-directory: /tmp/sazanami
+        run: |
+          python scripts/validate_oracle.py --selftest
+      - name: 残留jinjaプレースホルダの検査
+        working-directory: /tmp/sazanami
+        run: |
+          ! grep -rn "{{" --include="*.md" --include="*.yaml" --include="*.yml" . || (echo "未展開のプレースホルダが残存" && exit 1)

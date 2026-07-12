@@ -1,0 +1,46 @@
+---
+doc: {{ req_prefix }}_AGENTS_POINTER
+layer: L0
+version: 1.0
+status: active
+synced_with: CLAUDE.md(潮路キット生成)
+---
+
+# AGENTS.md
+
+このリポジトリはエージェント駆動で開発される。本ファイルは**全エージェント共通の入口**である。
+
+**最初に `CLAUDE.md` を全文読むこと。** CLAUDE.md がL0エージェント契約であり、本ファイルを含む全文書に優先する。文書レイヤの優先順位は L0 > L1(docs/spec) > L2(docs/design) > L3(docs/L3, TASK_INDEX.md のstatus)。
+
+## エージェント別の入口
+
+| エージェント | 自動読込 | 開始手順 |
+|---|---|---|
+| Claude Code | CLAUDE.md(本ファイルも可) | 該当プロンプトを貼る(下記) |
+| OpenAI Codex(CLI / cloud) | 本ファイル | 本ファイル→CLAUDE.md読了後、該当プロンプトを実行 |
+| Jules ほか | 本ファイル | 同上 |
+
+## 動作モード
+
+- **インセプション(仕様が未確定の間)**: INCEPTION_PROMPT.md を使用。出力は docs/proposals/inception/ への提案のみ。
+- **単発モード(既定)**: 1タスク実行→review止まり。INITIAL_PROMPT.md §0 を使用。
+- **自走モード**: 人間がセッション内で「自走モード開始」を宣言した場合のみ CLAUDE.md §3.5 が有効化。INITIAL_PROMPT.md §1 を使用。**宣言なしに §3.5 を自己適用してはならない。**
+
+## 来歴(マルチエージェント運用)
+
+- コミット末尾にトレーラを付ける: `Agent: claude-code | codex-cli | codex-cloud | jules`
+- PROGRESS.md の記帳行末に (agent名) を添える。自走ブランチは1エージェント専有とし、複数エージェントで同一ブランチを触らない。
+
+## セットアップ(共通)
+
+- **Python仮想環境は必須**: リポジトリ直下に `.venv` を作成・有効化(手順はCLAUDE.md §8)。
+- **自己修復(必須挙動)**: venv不在・Pythonモジュール不足は停止事由ではない。venv作成+`python -m pip install -r requirements.txt` で復旧して続行する。
+- 確認: `make setup && make guard`(全緑で開始可。Windowsネイティブは `python scripts/run_gates.py`)。スタック未初期化の間、stack系検証は自動skip。
+- `verification/reference/` への書込・生成・改変は全エージェント禁止(検証オラクルは人間管理。CLAUDE.md §6)。
+
+## 要点(詳細は CLAUDE.md)
+
+- ゲートを欺かない(§2-1)。不合格時に閾値・参照・テストを調整して通すことは禁止。不合格の検出は成果である。
+- docs/spec/* は編集禁止(提案は docs/proposals/ へ)。
+- タスクは TASK_INDEX.md から取り、REQ-{{ req_prefix }}-xxx を実装とテストの双方に注記。status語彙: todo / doing / review / done / blocked。
+- 迷ったら: 可逆な実装判断は DECISIONS.md に1行記録して自律で進む(不可逆・外部波及は ISSUE)。同種の失敗3回で blocked 化して次へ(§3.5-9)。guard赤のコミットは pre-commit フックが機械的に拒否する。

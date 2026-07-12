@@ -1,0 +1,55 @@
+# project.yaml — プロセス設定のSSoT(潮路キット生成)
+# 汎用スクリプト(scripts/*.py)はこのファイルだけを読む。
+# 編集規則:
+#   - gates への行追加・stack の調整はエージェント提案可(DECISIONS 記録)。
+#   - oracle の tolerances / pass_rate は人間が確定した後は変更禁止(CLAUDE.md §2-1)。
+#   - deprecated_reqs への追加は仕様改版(人間)と同時にのみ行う。
+project: {{ project_name }}
+req_prefix: {{ req_prefix }}              # 注記形式: REQ-{{ req_prefix }}-nnn(3桁)
+spec_glob: docs/spec/{{ spec_slug }}_SPEC*.md
+deprecated_reqs: []                        # 廃止REQ番号(整数)。例: [31, 32, 55]
+
+layers:
+  src: [lib, src]                          # 実装層(REQ注記の実装⇔テストリンク検査対象)
+  test: [test, tests]
+
+scan_ext: [.dart, .py, .md, .yaml, .yml, .ts, .tsx, .js, .kt, .swift, .rs, .go]
+l0_exempt: [CLAUDE.md, AGENTS.md]          # 廃止REQを名指しできる文書(編集は人間のみ)
+
+stack:
+{% if stack == 'flutter' %}
+  app_manifest: pubspec.yaml               # アプリ本体の依存台帳(追加は人間ゲート — CLAUDE.md §6)
+  ready_marker: pubspec.yaml               # 不在の間、stack系コマンドは自動skip(0日目から緑)
+  analyze: flutter analyze
+  test: flutter test
+{% elif stack == 'node' %}
+  app_manifest: package.json
+  ready_marker: package.json
+  analyze: npm run lint --silent
+  test: npm test --silent
+{% elif stack == 'python' %}
+  app_manifest: pyproject.toml
+  ready_marker: pyproject.toml
+  analyze: ruff check .
+  test: pytest -q
+{% else %}
+  app_manifest: ""                         # T-001/T-002 で設定(空の間、依存台帳ゲートは対象なし)
+  ready_marker: ""                         # 空の間、stack系コマンドは常にskip
+  analyze: ""
+  test: ""
+{% endif %}
+
+gates:                                     # make guard / pre-commit / CI guardrails が同一列を実行
+  - {id: req-links, cmd: python scripts/check_req_links.py}
+  - {id: oracle, cmd: python scripts/validate_oracle.py --dry-run}   # --gate 切替は人間(CLAUDE.md §5)
+
+# oracle:                                  # 精度ゲート定義(インセプション N1 で確定 — PROCESS.md §6)
+#   reference_dir: verification/reference  # 参照オラクル(人間投入・エージェント改変禁止)
+#   predictions_dir: verification/predictions
+#   match: ordered                         # exact(キー完全一致) | ordered(時系列整列)
+#   group_by: [kind]                       # 系列を分ける列(例: 満潮H/干潮L)
+#   order_by: time                         # 整列列。ISO8601("2026-07-09 17:42")または数値
+#   order_tolerance: 10                    # order_by の許容(日時なら分)
+#   order_window: 360                      # 対応付け探索窓(日時なら分)
+#   values: {height_cm: 15.0}              # 値列 → 絶対許容誤差
+#   pass_rate: 0.95                        # 合格率(missing を分母に含む)

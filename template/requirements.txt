@@ -1,0 +1,3 @@
+# ツールチェーン依存のSSoT(CLAUDE.md §8)。エージェントは追加時に理由コメントを添えること。
+# venv外インストール禁止。アプリ本体の依存(stack.app_manifest)はここではなく人間ゲート(§6)。
+pyyaml  # project.yaml(プロセス設定のSSoT)の読取(scripts/run_gates.py ほか)

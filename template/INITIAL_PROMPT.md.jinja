@@ -1,0 +1,72 @@
+# 初回投入プロンプト v1.0(潮路キット生成)
+
+用途別に3種。§0=単発(既定)、§1=自走(人間宣言時のみ)、§2=自走の再開。
+仕様が未確定の間はこれらではなく INCEPTION_PROMPT.md を使うこと。
+
+## §0 単発モード用(既定・1タスクだけ実行)
+
+---
+このリポジトリの契約 CLAUDE.md を全文読み、遵守事項を3行で要約してから開始してください。
+作業は仮想環境 `.venv` で行います。venv不在・モジュール不足では停止せず、自己修復してください(CLAUDE.md §8: venv作成 + `python -m pip install -r requirements.txt`)。
+TASK_INDEX.md の status=todo かつ依存が全て done の最小IDタスクを**1つだけ**実行します
+(私がタスクIDを指定した場合はそれを優先)。
+CLAUDE.md §3 に従い、make ci 全緑 → status=review → docs/L3/PROGRESS.md 記帳(行末にagent名)で終了。
+規範解釈の疑義・人間ゲート該当事項は docs/L3/ISSUES.md に記帳して停止してください。
+---
+
+## §1 自走モード用(人間が宣言した場合のみ)
+
+---
+自走モード開始(CLAUDE.md §3.5)。あなたはこのリポジトリの自走開発エージェントです。
+
+### 目標の定義
+「開発完了」とは、TASK_INDEX.md の担当=A の全タスクが done、担当=A+H が review(準備完了)、
+残りが人間ゲート待ち行列として整理された状態を指す。人間ゲートを越えて完了を装うことは失敗である。
+
+### 起動手順(この順で、省略せず)
+1. CLAUDE.md を全文読み、§2 絶対規範を3行で要約して宣言する。
+2. 環境準備(自己修復): `.venv` が無ければ作成し、`python -m pip install -r requirements.txt` を実行
+   (POSIXでは `make guard` がこの手順を内包)。その上で `python scripts/run_gates.py` が通ることを確認。
+   **venv・Pythonモジュール起因の失敗では停止しない** — CLAUDE.md §8 に従い自己修復して再試行する。
+   停止して人間に返すのは、システム側ツール(スタックSDK / git / make 等のOSレベル導入)が欠ける場合のみ。
+3. TASK_INDEX / PROGRESS / ISSUES / DECISIONS を読み、現在地を5行以内で要約する。
+   **孤児doingの回収**: status=doing が残っていれば直近コミット・PROGRESSと照合し、
+   (a)整合すれば続行 (b)状態不明なら未コミット変更を `wip: T-xxx 中断状態` としてコミットした上で
+   status を todo に戻し、ISSUE に状況を1件記帳してから通常の選定に入る。作業を握り潰さない。
+4. `git switch -c autopilot/$(date +%Y%m%d)-<agent名>` を切る(Windowsネイティブでは日付部を手で展開)。
+5. 作業ループへ。
+
+### 作業ループ(1タスク=1サイクル、完了まで反復)
+1. 選定: status=todo かつ依存が全て done の最小IDタスク。
+2. TASK_INDEX の status を doing に更新してから着手。
+3. 実装: ロジック/エンジン系はテストファースト、UI系はゴールデン基準(採用時)。
+   実装とテストの双方に REQ-{{ req_prefix }}-xxx を注記。1タスクの変更を他タスクと混ぜない。
+4. `make ci` 全緑を確認(Windowsは `python scripts/run_gates.py --all`)。赤のまま次工程へ進むことを禁ずる。
+5. コミット: `feat(scope): summary [T-xxx][REQ-{{ req_prefix }}-xxx]` + トレーラ `Agent: <agent名>`(1タスク1コミット以上)。
+6. 昇格前の自己検収(5点全て満たすまで昇格しない): ①REQ注記が実装とテストの双方にある
+   ②テストを追加/更新した ③make ci 全緑 ④status/PROGRESS/(該当時)DECISIONSを更新した
+   ⑤タスク外ファイルに触れた場合は理由がコミットメッセージに明記されている。
+   その上で昇格: 担当=A は done へ、A+H は review へ(§3.5-2)。PROGRESS.md に3行記帳(行末にagent名)。
+7. 次のタスクへ。フェーズ境界では CHECKPOINT 記帳(§3.5-4)+ §2絶対規範を1行で再宣言(アンチドリフト)+ origin/main 乖離の確認(§3.5-11)。
+
+### 迷ったとき
+- 実装詳細(L1の自由度内)の**可逆な判断** → 問い合わせず決定し、DECISIONS.md に1行記録して進む(§3.5-8)。不可逆・外部波及は ISSUE+blocked。同種の失敗3回で沼判定→blocked→次へ(§3.5-9)。
+- Pythonモジュール不足 → 停止しない。requirements.txt へ理由付き追記+インストールで自己修復(§8)。
+- 規範(L1)の解釈疑義・人間ゲート・**アプリ本体依存(stack.app_manifest)追加**の必要 → ISSUE起票+当該タスクを blocked にして
+  次のタスクへ。**全体を止めない。**
+- validate_oracle の不合格 → 数字・閾値・テストを調整して通すことを禁ずる(§2-1)。
+  原因分析を ISSUE に書き、当該系統を停止。独立タスクは継続してよい。
+
+### セッション終了・圧縮の前に(毎回)
+- 未コミット変更ゼロ、PROGRESS.md 冒頭に「次の一手: T-xxx の〜から」を1行。
+
+### 完全停止したら
+- PROGRESS.md に最終レポート: 完了数 / blocked一覧(理由付き) / 人間の次アクション上位3つ。
+---
+
+## §2 自走の再開用(2回目以降・コンテキスト圧縮後)
+
+---
+自走モード再開。CLAUDE.md(§2と§3.5)→TASK_INDEX→PROGRESS→ISSUESの順に読み、
+PROGRESS冒頭の「次の一手」から作業ループを継続してください。起動手順の環境確認も再実行すること。
+---

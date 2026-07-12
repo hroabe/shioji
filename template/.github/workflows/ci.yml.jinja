@@ -1,0 +1,48 @@
+# 検証ゲートのCI配線(潮路キット生成)。ゲート定義は CLAUDE.md §4 / project.yaml。
+# guardrails は make guard / pre-commit と同一のゲート列(scripts/run_gates.py)を実行する。
+name: ci
+on: [push, pull_request]
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python scripts/run_gates.py
+{% if stack == 'flutter' %}
+  stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: |
+          if [ -f pubspec.yaml ]; then flutter pub get && flutter analyze && flutter test; else echo "スタック未初期化(T-001)— skip"; fi
+{% elif stack == 'node' %}
+  stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          if [ -f package.json ]; then npm ci && npm run lint --silent && npm test --silent; else echo "スタック未初期化(T-001)— skip"; fi
+{% elif stack == 'python' %}
+  stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" && ruff check . && pytest -q; else echo "スタック未初期化(T-001)— skip"; fi
+{% else %}
+  # スタックジョブは T-002 で配線する(project.yaml の stack 節と同じコマンドを使うこと)
+{% endif %}
