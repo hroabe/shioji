@@ -40,7 +40,8 @@ def refs_in(path: Path, req_re: re.Pattern) -> set[str]:
         return set()
 
 
-def iter_files(dirs: list[str], scan_ext: set[str], skip: set[Path]) -> list[Path]:
+def iter_files(dirs: list[str], scan_ext: set[str], skip: set[Path],
+               exclude_prefixes: tuple[str, ...] = ()) -> list[Path]:
     out = []
     for d in dirs:
         base = ROOT / d
@@ -48,8 +49,12 @@ def iter_files(dirs: list[str], scan_ext: set[str], skip: set[Path]) -> list[Pat
             continue
         it = base.rglob("*") if d != "." else base.glob("*")
         for p in it:
-            if p.is_file() and p.suffix in scan_ext and p.resolve() not in skip:
-                out.append(p)
+            if not (p.is_file() and p.suffix in scan_ext and p.resolve() not in skip):
+                continue
+            rel = p.relative_to(ROOT).as_posix()
+            if any(rel == pre or rel.startswith(pre + "/") for pre in exclude_prefixes):
+                continue
+            out.append(p)
     return out
 
 
@@ -81,6 +86,9 @@ def main() -> int:
     test_dirs = [str(d) for d in layers.get("test") or []]
     scan_ext = {str(e) for e in cfg.get("scan_ext") or [".py", ".md", ".yaml", ".yml"]}
     scan_dirs = [*src_dirs, *test_dirs, "scripts", "docs", "data", "."]
+    # 提案(docs/proposals)は下書き — 未定義/将来/却下のREQを含み得るのでREQ検査から除外。
+    # インセプション出力(docs/proposals/inception)が仕様適用前にREQ IDを提案できる根拠。
+    exclude = tuple(str(x).strip("/") for x in (cfg.get("scan_exclude") or ["docs/proposals"]))
 
     specs = sorted(ROOT.glob(str(cfg.get("spec_glob", "docs/spec/*SPEC*.md"))))
     spec = specs[-1] if specs else None
@@ -91,7 +99,7 @@ def main() -> int:
 
     # 1&2: 全スキャン
     all_refs: dict[Path, set[str]] = {}
-    for p in iter_files(scan_dirs, scan_ext, skip):
+    for p in iter_files(scan_dirs, scan_ext, skip, exclude):
         found = refs_in(p, req_re)
         if found:
             all_refs[p] = found

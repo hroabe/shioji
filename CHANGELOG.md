@@ -14,6 +14,10 @@
 - Stage2: INCEPTION_PROMPT.md(壁打ち→提案生成→人間確定の台本)
 - kit-ci: ダミー実体化→生成直後に緑の検証(manual / flutter の2系統)
 
+## [未リリース] — パイロット還流(kenpo-keisan)
+
+- **fix(gate): 提案(docs/proposals)をREQ検査から除外**(project.yaml の `scan_exclude`・既定 `[docs/proposals]`)。パイロット還流#1: インセプション出力がREQ IDを提案すると、仕様適用前は幽霊REQ判定で pre-commit がブロックする問題を修正。提案は下書き(未定義/将来/却下のREQを含み得る)ため除外が正。src/test の幽霊REQ検出は不変(過剰除外なし)。
+
 ### v0.2 候補(パイロット還流待ち)
 - モジュール条件生成(データ台帳・ゴールデン規約の copier 選択式)
 - validate_oracle の整列強化(厳密DP・extra分類 — tsukishio で実証済みの発展形)

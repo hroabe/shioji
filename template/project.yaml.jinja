@@ -15,6 +15,7 @@ layers:
 
 scan_ext: [.dart, .py, .md, .yaml, .yml, .ts, .tsx, .js, .kt, .swift, .rs, .go]
 l0_exempt: [CLAUDE.md, AGENTS.md]          # 廃止REQを名指しできる文書(編集は人間のみ)
+scan_exclude: [docs/proposals]             # 提案は下書き(未定義/将来/却下のREQを含み得る)— REQ検査から除外
 
 stack:
 {% if stack == 'flutter' %}
