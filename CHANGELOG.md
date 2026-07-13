@@ -2,7 +2,7 @@
 
 版管理は SemVer。タグ付け=リリースは人間ゲート(PROCESS.md)。
 
-## [未リリース] 0.1.0 — 2026-07-12
+## [0.1.0] — 2026-07-13(人間承認によりリリース・MITライセンス付与)
 
 初期実装(tsukishio からのプロセス抽出。提案書: tsukishio/docs/proposals/2026-07-12_process_kit_extraction.md)。
 
