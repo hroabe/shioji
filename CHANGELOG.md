@@ -17,6 +17,7 @@
 ## [未リリース] — パイロット還流(kenpo-keisan)
 
 - **fix(gate): 提案(docs/proposals)をREQ検査から除外**(project.yaml の `scan_exclude`・既定 `[docs/proposals]`)。パイロット還流#1: インセプション出力がREQ IDを提案すると、仕様適用前は幽霊REQ判定で pre-commit がブロックする問題を修正。提案は下書き(未定義/将来/却下のREQを含み得る)ため除外が正。src/test の幽霊REQ検出は不変(過剰除外なし)。
+- **fix(scripts): 同梱 validate_oracle.py の ruff E702 を解消(還流#3)**。セミコロン多重文を分割。Python-stackで実体化し `ruff check .` を通すと同梱スクリプトが赤になる問題。kit-ci に「テンプレ同梱スクリプトの lint」ジョブ + 実体化matrixに `python` を追加し再発防止。
 - **docs(release): 配布はタグ依存 — 既知の注意点(還流#2)**。copier 既定は「最新の git タグ」から複製する。リリースタグを GitHub へ push できていないと(本セッションはプロキシがタグ push を403拒否)、①リモートはタグ皆無→`copier copy gh:...` は HEAD 複製(可)、②タグを持つローカルclone は古いタグ内容で複製、という不一致が起きる。対策: リリースタグは必ず GitHub 側で作成(人間ゲート)。再現性が要る実体化は `--vcs-ref=<tag/sha>` を明示。
 
 ### v0.2 候補(パイロット還流待ち)

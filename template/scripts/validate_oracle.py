@@ -115,17 +115,22 @@ def match_ordered(ref: list, pred: list, cfg: dict):
         while i < len(r) and j < len(p):
             d = order_delta(p[j]["order"], r[i]["order"])
             if d < -window:
-                extra.append(p[j]); j += 1
+                extra.append(p[j])
+                j += 1
             elif d > window:
-                missing.append(r[i]); i += 1
+                missing.append(r[i])
+                i += 1
             else:
                 # 1手先読み: 次の予測の方が現参照に近ければ、現予測はextraへ送る(再利用禁止・非交差)
                 if j + 1 < len(p):
                     d_next = order_delta(p[j + 1]["order"], r[i]["order"])
                     if abs(d_next) < abs(d) and abs(d_next) <= window:
-                        extra.append(p[j]); j += 1
+                        extra.append(p[j])
+                        j += 1
                         continue
-                pairs.append((r[i], p[j])); i += 1; j += 1
+                pairs.append((r[i], p[j]))
+                i += 1
+                j += 1
         missing.extend(r[i:])
         extra.extend(p[j:])
     return pairs, missing, extra

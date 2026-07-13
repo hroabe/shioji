@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        stack: [manual, flutter]
+        stack: [manual, flutter, python]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,3 +37,14 @@ jobs:
         working-directory: /tmp/sazanami
         run: |
           ! grep -rn "{{" --include="*.md" --include="*.yaml" --include="*.yml" . || (echo "未展開のプレースホルダが残存" && exit 1)
+  # 還流#3: 同梱スクリプトが dirty(ruff違反)なまま出荷されると、Python-stack実体化で
+  # `ruff check .` が赤になる。テンプレ同梱スクリプトを生成先と同じ規則で lint する。
+  lint-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install ruff
+      - run: ruff check --select E,F --ignore E501 template/scripts
