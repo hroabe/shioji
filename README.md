@@ -1,11 +1,8 @@
 # 潮路(shioji)
 
-月潮(tsukishio)が拓いた航路を、次の船へ。
-
 SSoT文書レイヤ・検証ゲート・自走モードを備えた **AIエージェント駆動開発のプロセスひな型**(copierテンプレート)。仕様(何を作るか)はプロジェクトごとに違っても、規律(どう作るか)は同じ航路を通れるようにする。
 
 - 思想と規則の根拠: [PROCESS.md](PROCESS.md)(本キットのL1)
-- 参照実装: [hroabe/tsukishio](https://github.com/hroabe/tsukishio)(この航路を最初に走った船)
 
 ## 使い方(3ステップ)
 
