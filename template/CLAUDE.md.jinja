@@ -66,11 +66,14 @@ SSoT: `docs/spec/{{ spec_slug }}_SPEC_v*.md`(インセプション後に人間�
 | ゲート | コマンド | 適用 |
 |---|---|---|
 | ゲート列一括(guard) | `python scripts/run_gates.py`(= make guard = pre-commit = CI guardrails) | 全PR |
-| REQ整合 | `python scripts/check_req_links.py`(廃止ID参照・未定義REQ・実装⇔テストリンク・status語彙) | 全PR |
+| 設定検査 | `python scripts/check_project_config.py`(project.yaml 自体の検査。**run_gates.py の組み込み**で、gates 列には書かない) | 全PR |
+| REQ整合 | `python scripts/check_req_links.py`(廃止ID参照・未定義REQ・実装⇔テストリンク・status語彙)。対象は `requirements.active_spec` が指す1件。未設定の間は**未装備** | 全PR |
 | 精度(オラクル照合) | `python scripts/validate_oracle.py --dry-run` → **T-003 を done にすると自動で `--gate` へ切替**(§5) | 全PR |
 | 静的解析・単体 | `python scripts/run_gates.py --all`(project.yaml の stack.analyze / stack.test。ready_marker 不在時は**未装備**として報告し、緑には数えない) | 全PR |
 | 未装備の失効 | project.yaml の `by_task`。期限のタスクを `done` にしたのに装備されていなければ赤 | 全PR |
 | 未装備の一括点検 | `python scripts/run_gates.py --strict`(未装備を赤とする) | リリース前・監査時 |
+
+**ゲートの書き方**: `project.yaml` の `gates[].argv` は argv 形式で、shell を経由しない。検証コマンドをワークフローや Makefile へ直書きしない(ローカルとCIで別物になるため)。
 
 **未装備の扱い**: ゲートは終了コード `3` で「実行したが装備されていない」を自己申告する。`run_gates.py` は `緑N件 / 未装備M件` と報告し `verification/gate_status.json` に残す。project.yaml の `by_task` が指すタスクを `done` にしたのに装備されていなければ赤になる。**未装備を緑と読み替えて報告してはならない。**
 

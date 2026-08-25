@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # ゲートが「未装備」を自己申告する終了コード
 STATUS_PATH = ROOT / "verification" / "gate_status.json"
+CONFIG_CHECK = ROOT / "scripts" / "check_project_config.py"
 TASK_INDEX = ROOT / "TASK_INDEX.md"
 
 # 表の行: | T-001 | タスク | REQ | 依存 | 担当 | status |
@@ -71,21 +72,36 @@ def task_status(task_id: str | None) -> str | None:
     return None
 
 
-def run(label: str, cmd: str, protocol: bool = True) -> bool:
+def run(label: str, argv: list, protocol: bool = True) -> bool:
     """ゲートを1件実行する。装備済みで合格なら True、未装備なら False。
 
     赤ならその場で終了する。
+
+    argv 形式・shell=False で実行する。project.yaml はエージェントが編集
+    できるため、そこに書かれた文字列をシェルに解釈させない。複雑な処理は
+    シェルの一行ではなく scripts/*.py へ置く。
 
     protocol=False は、この規約を知らない任意のコマンド(stack.analyze /
     stack.test など)向け。終了コード 3 を未装備と解釈してはならない。
     pytest は exit 3 を internal error として使う — 規約を押し付けると
     クラッシュが緑になる。
     """
-    # gates の "python ..." は現在のインタプリタ(venv/CI)で実行し、環境差を作らない
-    if cmd.startswith("python "):
-        cmd = f'"{sys.executable}" ' + cmd[len("python "):]
-    print(f"== {label}: {cmd}", flush=True)
-    proc = subprocess.run(cmd, cwd=ROOT, shell=True, env=utf8_io())
+    argv = [str(a) for a in argv]
+    # "python" は現在のインタプリタ(venv/CI)へ差し替え、環境差を作らない
+    if argv and argv[0] == "python":
+        argv[0] = sys.executable
+    print(f"== {label}: {' '.join(argv)}", flush=True)
+    try:
+        proc = subprocess.run(argv, cwd=ROOT, env=utf8_io())
+    except OSError as error:
+        # shell を経由しないため、実行ファイルが PATH に無いと例外になる。
+        # shell=True のときは非ゼロ終了で赤になっていた。トレースバックではなく
+        # ゲートの赤として扱う。
+        sys.exit("\n".join([
+            f"NG: ゲート '{label}' のコマンドを実行できない: {argv[0]}",
+            f"    {error}",
+            "    実行ファイルが PATH にあるか、project.yaml の argv を確認すること",
+        ]))
     if protocol and proc.returncode == UNARMED:
         return False
     if proc.returncode != 0:
@@ -139,16 +155,32 @@ def main() -> int:
     cfg = load_config()
     results: list = []
 
+    # 設定検査は gates 列に依存させない。
+    # gates 自体が project.yaml の中にあるため、「設定を検査するゲート」を
+    # 設定から消す・改名する・壊れたゲートの後ろへ移す、のどれでも強制が外れる。
+    # 自分を検査する仕組みを、自分が編集できる場所に置かない。
+    if not CONFIG_CHECK.exists():
+        sys.exit("NG: scripts/check_project_config.py が無い(設定検査は必須)")
+    run("config", ["python", CONFIG_CHECK.relative_to(ROOT).as_posix()])
+    results.append({"id": "config", "state": "pass",
+                    "note": "組み込み(gates 列に依存しない)"})
+
     for gate in cfg.get("gates") or []:
         label = str(gate.get("id", "?"))
-        cmd = str(gate["cmd"])
+        if any("check_project_config.py" in str(a) for a in (gate.get("argv") or [])):
+            continue                      # 組み込みで実行済み
+        if not gate.get("argv"):
+            sys.exit(f"NG: ゲート '{label}' に argv がない。"
+                     "v2 では cmd ではなく argv を使う"
+                     "(python scripts/check_project_config.py で詳細が出る)")
+        cmd = list(gate["argv"])
         cutover = gate.get("cutover") or {}
         by_task = cutover.get("by_task")
 
         # カットオーバー: 期限のタスクが done になったら装備側のコマンドへ切り替える。
         # 「--dry-run のまま忘れられる」を人間の記憶に頼らない。
-        if by_task and task_status(by_task) == "done" and cutover.get("cmd"):
-            cmd = str(cutover["cmd"])
+        if by_task and task_status(by_task) == "done" and cutover.get("argv"):
+            cmd = list(cutover["argv"])
 
         if run(label, cmd):
             results.append({"id": label, "state": "pass", "note": ""})
@@ -173,11 +205,12 @@ def main() -> int:
             results.append({"id": "stack", "state": "unarmed", "note": note})
         else:
             for key in ("analyze", "test"):
-                cmd = str(stack.get(key) or "").strip()
-                if cmd:
+                cmds = stack.get(key) or []
+                for n, cmd in enumerate(cmds, 1):
+                    label = f"stack.{key}" if len(cmds) == 1 else f"stack.{key}#{n}"
                     # 任意のコマンドなので exit 3 も赤。protocol=False。
-                    run(f"stack.{key}", cmd, protocol=False)
-                    results.append({"id": f"stack.{key}", "state": "pass", "note": ""})
+                    run(label, cmd, protocol=False)
+                    results.append({"id": label, "state": "pass", "note": ""})
 
     return report(results, strict)
 

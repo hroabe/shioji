@@ -1,12 +1,23 @@
 # project.yaml — プロセス設定のSSoT(潮路キット生成)
 # 汎用スクリプト(scripts/*.py)はこのファイルだけを読む。
+# このファイル自体は scripts/check_project_config.py が検査する
+# (run_gates.py が gates 列より前に無条件で実行する。下の gates には書かない)。
 # 編集規則:
 #   - gates への行追加・stack の調整はエージェント提案可(DECISIONS 記録)。
-#   - oracle の tolerances / pass_rate は人間が確定した後は変更禁止(CLAUDE.md §2-1)。
-#   - deprecated_reqs への追加は仕様改版(人間)と同時にのみ行う。
-project: {{ project_name }}
-req_prefix: {{ req_prefix }}              # 注記形式: REQ-{{ req_prefix }}-nnn(3桁)
-spec_glob: docs/spec/{{ spec_slug }}_SPEC*.md
+#   - oracle の values / pass_rate / metrics は人間が確定した後は変更禁止(CLAUDE.md §2-1)。
+#   - requirements.active_spec の差し替えは仕様改版(人間)と同時にのみ行う。
+#   - deprecated_reqs への追加も同上。
+schema_version: 2
+
+project: "{{ project_name }}"
+
+requirements:
+  prefix: "{{ req_prefix }}"                 # 注記形式: REQ-{{ req_prefix }}-nnn(3桁)
+  # 有効な仕様書を1つだけ明示する。glob で自動選択しない
+  # (文字列ソートでは v0.10 が v0.9 より前に並び、front-matter の status も見られない)。
+  # 空の間、REQ整合ゲートは「未装備」として報告される(緑には数えない)。
+  active_spec: ""                          # 例: docs/spec/{{ spec_slug }}_SPEC_v0.1.md
+
 deprecated_reqs: []                        # 廃止REQ番号(整数)。例: [31, 32, 55]
 
 layers:
@@ -21,38 +32,45 @@ stack:
   by_task: T-001                           # done になったら ready_marker の成立を要求する(未装備の失効)
 {% if stack == 'flutter' %}
   app_manifest: pubspec.yaml               # アプリ本体の依存台帳(追加は人間ゲート — CLAUDE.md §6)
-  ready_marker: pubspec.yaml               # 不在の間、stack系コマンドは自動skip(0日目から緑)
-  analyze: flutter analyze
-  test: flutter test
+  ready_marker: pubspec.yaml               # 不在の間、stack系コマンドは未装備として報告(0日目から緑)
+  analyze: [[flutter, analyze]]
+  test: [[flutter, test]]
 {% elif stack == 'node' %}
   app_manifest: package.json
   ready_marker: package.json
-  analyze: npm run lint --silent
-  test: npm test --silent
+  analyze: [[npm, run, lint, --silent], [npx, tsc, --noEmit]]
+  test: [[npm, test, --silent]]
 {% elif stack == 'python' %}
   app_manifest: pyproject.toml
   ready_marker: pyproject.toml
-  analyze: ruff check .
-  test: pytest -q
+  analyze: [[ruff, check, .], [mypy, .]]
+  test: [[pytest, -q]]
 {% else %}
   app_manifest: ""                         # T-001/T-002 で設定(空の間、依存台帳ゲートは対象なし)
-  ready_marker: ""                         # 空の間、stack系コマンドは常にskip
-  analyze: ""
-  test: ""
+  ready_marker: ""                         # 空の間、stack系コマンドは常に未装備
+  analyze: []
+  test: []
 {% endif %}
 
-gates:                                     # make guard / pre-commit / CI guardrails が同一列を実行
-  - {id: req-links, cmd: python scripts/check_req_links.py}
+# make guard / pre-commit / CI guardrails が同一列を実行する。
+# argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、
+# そこに書かれた文字列をシェルに解釈させない。複雑な処理は scripts/*.py へ置く。
+# 設定検査(scripts/check_project_config.py)はここに書かない。
+# run_gates.py が gates 列より前に無条件で実行する。設定を検査する仕組みを、
+# 設定から消せる場所に置かないため。
+gates:
+  - id: req-links
+    argv: [python, scripts/check_req_links.py]
   - id: oracle
-    cmd: python scripts/validate_oracle.py --dry-run
-    cutover:                             # T-003 が done になったら自動で --gate へ切り替える
-      cmd: python scripts/validate_oracle.py --gate
-      by_task: T-003                     # 切替の判断は人間(T-003 を done にすること)
+    argv: [python, scripts/validate_oracle.py, --dry-run]
+    cutover:                               # T-003 が done になったら自動で --gate へ切り替える
+      argv: [python, scripts/validate_oracle.py, --gate]
+      by_task: T-003                       # 切替の判断は人間(T-003 を done にすること)
 
 # oracle:                                  # 精度ゲート定義(インセプション N1 で確定 — PROCESS.md §6)
 #   reference_dir: verification/reference  # 参照オラクル(人間投入・エージェント改変禁止)
 #   predictions_dir: verification/predictions
-#   match: ordered                         # exact(キー完全一致) | ordered(時系列整列)
+#   match: ordered                         # exact(キー完全一致) | ordered(時系列整列)。未知の値は赤
 #   group_by: [kind]                       # 系列を分ける列(例: 満潮H/干潮L)
 #   order_by: time                         # 整列列。ISO8601("2026-07-09 17:42")または数値
 #   order_tolerance: 10                    # order_by の許容(日時なら分)

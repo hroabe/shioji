@@ -6,28 +6,43 @@ _envops: # ブロックタグ行を出力に残さない(テンプレはYAML/Mar
   trim_blocks: true
   lstrip_blocks: true
 
+# validator は説明文と一致させる。以前は project_name|lower != project_name の
+# 判定だけだったため、foo_bar / foo.bar / foo/bar / 日本語 が「小文字英数と
+# ハイフンのみ」を名乗ったまま通っていた。
+# Jinja2 に正規表現テストが無いので、許可文字の集合と境界条件で表す。
+
 project_name:
   type: str
   help: プロジェクト名(小文字英数とハイフン。リポジトリ名と揃える。例 tsukishio)
   placeholder: my-project
   validator: >-
-    {% if not project_name or project_name|lower != project_name or ' ' in project_name %}
-    小文字英数とハイフンのみで入力してください
+    {% set allowed = 'abcdefghijklmnopqrstuvwxyz0123456789-' %}
+    {% if not project_name %}
+    プロジェクト名を入力してください
+    {% elif project_name | reject('in', allowed) | list | length > 0 %}
+    小文字英数とハイフンのみ使えます(大文字・記号・空白・全角は不可)
+    {% elif project_name.startswith('-') or project_name.endswith('-') or '--' in project_name %}
+    ハイフンで始まる・終わる・連続することはできません
     {% endif %}
 
 req_prefix:
   type: str
-  help: REQ接頭辞(大文字2〜5字。例 TSU → REQ-TSU-001)
+  help: REQ接頭辞(大文字英字2〜5字。例 TSU → REQ-TSU-001)
   default: "{{ project_name[:3]|upper|replace('-', 'X') }}"
   validator: >-
-    {% if req_prefix|upper != req_prefix or req_prefix|length < 2 or req_prefix|length > 5 %}
-    大文字2〜5字で入力してください
+    {% set upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
+    {% if req_prefix | length < 2 or req_prefix | length > 5 %}
+    2〜5字で入力してください
+    {% elif req_prefix | reject('in', upper) | list | length > 0 %}
+    大文字英字のみ使えます(数字・記号・全角は不可)
     {% endif %}
 
+# project_name から決定的に導出できるため質問しない。
+# 第1段は決定的生成であり、導出可能な値を人間に尋ねる理由がない。
 spec_slug:
   type: str
-  help: 仕様書ファイル名の識別子(docs/spec/<SPEC_SLUG>_SPEC_v0.1.md)
   default: "{{ project_name|upper|replace('-', '_') }}"
+  when: false
 
 stack:
   type: str

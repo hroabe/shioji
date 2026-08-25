@@ -16,6 +16,63 @@
 
 ## [未リリース] — パイロット還流(kenpo-keisan)
 
+### 破壊的変更 — project.yaml schema v2（0.2.0 への版上げを提案）
+
+**既存の導出プロジェクトは、移行するまでゲートが赤になる。** `copier update` は
+`project.yaml` を上書きしない(生成後プロジェクトの所有物)ため、移行は明示的に行う。
+
+移行手順:
+
+1. `copier update` でテンプレートを更新する(scripts/ が入れ替わる)
+2. `python scripts/migrate_config.py` で変換結果を確認する(ファイルは変更されない)
+3. `python scripts/migrate_config.py --write` で適用する
+   — **コメントは失われる**ので、編集規則のコメントは書き戻すこと
+4. 出力された「要確認」に対応する
+   - `requirements.active_spec` — `spec_glob` の候補が複数あった場合は空になる。
+     どれが有効かは人間が決める(自動選択こそが v2 で直した不具合)
+   - `cutover.by_task` — 仮置きの `T-003` を TASK_INDEX の実在タスクに合わせる
+5. `python scripts/run_gates.py --all` が緑になることを確認する
+
+変更点:
+
+- `req_prefix` → `requirements.prefix`
+- `spec_glob` → `requirements.active_spec`(1件を明示。glob の自動選択を廃止 —
+  文字列ソートでは `v0.10` が `v0.9` より前に並び、`status` も見ていなかった)
+- `gates[].cmd` / `cutover.cmd` → `argv`(shell を経由しない)
+- `stack.analyze` / `stack.test` → argv のリスト
+- 設定検査(`scripts/check_project_config.py`)を追加。`gates` 列には書かず、
+  `run_gates.py` が無条件で先に実行する
+- `active_spec` 未設定の間、REQ整合ゲートは**未装備**(exit 3)を返す。
+  従来は黙って緑だった
+
+### 破壊的変更 — copier の質問 `spec_slug` を削除（同上）
+
+`project_name` から決定的に導出できるため質問から外した(`when: false` で内部
+変数としては残る)。第1段は決定的生成であり、導出可能な値を人間に尋ねない。
+
+`copier update` では回答ファイルに残る `spec_slug` は使われず、`project_name`
+からの導出値になる。**過去に `project_name` と対応しない `spec_slug` を指定して
+いた場合、生成されるファイル名が変わる**ので `copier update` の差分を確認すること。
+
+### 版の提案
+
+上記はいずれも破壊的変更のため、**0.2.0** への版上げを提案する(SemVer では
+0.x のマイナー版が破壊的変更を表す)。タグ付け=リリースは人間ゲート。
+
+### その他
+
+- **fix(gate): 未装備と合格を分けて報告**(`緑N件 / 未装備M件`・`gate_status.json`・
+  Job Summary)。ゲートは exit 3 で未装備を自己申告する。`by_task` で未装備に期限を
+  与え、期限のタスクが `done` になったのに装備されていなければ赤にする
+- **fix(ci): 生成CIのスタックジョブから `if [ -f ... ]; then ...; else echo skip; fi`
+  を撤去**し `run_gates.py --all` へ寄せた。検証を飛ばして成功する経路であり、
+  `stack.by_task` の期限も評価されていなかった
+- **fix(scripts): Windows(cp932)で日本語のゲート出力が UnicodeEncodeError で落ちる**
+  問題を修正。pre-commit フックだけが `PYTHONUTF8` を立てており、`make guard` /
+  CI から直接呼ばれる経路が保護されていなかった
+- **fix(copier): validator を説明文と一致させた**。`foo_bar` / `foo.bar` /
+  `foo/bar` / 日本語 / `-foo` / `foo--bar`、`req_prefix` の `A1` などが通っていた
+
 - **fix(gate): 提案(docs/proposals)をREQ検査から除外**(project.yaml の `scan_exclude`・既定 `[docs/proposals]`)。パイロット還流#1: インセプション出力がREQ IDを提案すると、仕様適用前は幽霊REQ判定で pre-commit がブロックする問題を修正。提案は下書き(未定義/将来/却下のREQを含み得る)ため除外が正。src/test の幽霊REQ検出は不変(過剰除外なし)。
 - **fix(scripts): 同梱 validate_oracle.py の ruff E702 を解消(還流#3)**。セミコロン多重文を分割。Python-stackで実体化し `ruff check .` を通すと同梱スクリプトが赤になる問題。kit-ci に「テンプレ同梱スクリプトの lint」ジョブ + 実体化matrixに `python` を追加し再発防止。
 - **docs(release): 配布はタグ依存 — 既知の注意点(還流#2)**。copier 既定は「最新の git タグ」から複製する。リリースタグを GitHub へ push できていないと(本セッションはプロキシがタグ push を403拒否)、①リモートはタグ皆無→`copier copy gh:...` は HEAD 複製(可)、②タグを持つローカルclone は古いタグ内容で複製、という不一致が起きる。対策: リリースタグは必ず GitHub 側で作成(人間ゲート)。再現性が要る実体化は `--vcs-ref=<tag/sha>` を明示。

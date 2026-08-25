@@ -46,6 +46,10 @@ date: 2026-07-12
 4. **同一ゲート列を三箇所で実行**: make guard / pre-commit フック / CI guardrails は project.yaml の同じ gates 列を実行する(scripts/run_gates.py)。ローカルとCIの乖離を作らない。
 5. **未装備と合格を分ける**: 「実行していない」ことと「実行して合格した」ことを、同じ緑にしてはならない。ゲートは終了コード `3` で未装備を自己申告し、`run_gates.py` は `緑N件 / 未装備M件` として報告して `verification/gate_status.json` に残す。未装備には project.yaml の `by_task` で期限を与え、期限のタスクが `done` になったのに装備されていなければ赤にする(カットオーバー忘れの検出)。`--strict` は未装備自体を赤とする(リリース前・監査時に人間が実行する。0日目の main を赤にしないため、生成CIの既定には入れない)。0日目から緑の原則は維持するが、**その緑が何を意味するかを常に区別できる状態に保つ**。
    - 背景: GitHub Actions は `if:` でスキップされたジョブを Success として報告し、required status check に指定していてもマージを妨げない(再現: [hroabe/verifier-integrity-demo](https://github.com/hroabe/verifier-integrity-demo))。**同じ誤りをゲート実行器の側で繰り返さない。**
+6. **設定はSSoTであり、検査される**: `project.yaml` 自体を `scripts/check_project_config.py` が検査する。これは `gates` 列に**書かない** — `gates` 自体が `project.yaml` の中にあるため、そこに置くと「設定を検査する仕組み」を設定から消せてしまう。`run_gates.py` が `gates` 列より前に無条件で実行する。未知の `match`、範囲外の `pass_rate`、v1 の残骸などを、重い検査の前に落とす(fail fast)。設定を読むだけで実行してはならない。
+7. **ゲートは argv で実行し、shell を経由しない**: `project.yaml` はエージェントが編集できる。そこに書かれた文字列をシェルに解釈させない。複雑な処理はシェルの一行ではなく `scripts/*.py` へ置く。
+8. **有効な仕様書は1つを明示する**: glob で自動選択しない。文字列ソートでは `v0.10` が `v0.9` より前に並び、front-matter の `status`(superseded / draft)も見られない。`requirements.active_spec` に人間が明示し、実在と `status: active` を検査する。未設定の間、REQ整合ゲートは**未装備**として報告する(緑には数えない)。
+
 
 ## 6. 規範カタログ — 絶対規範の一般形
 

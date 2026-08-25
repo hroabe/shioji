@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+UNARMED = 3                       # 未装備(run_gates.py が「緑」と区別して数える)
 DOC_STATUS_OK = {"draft", "active", "review", "accepted", "superseded", "deprecated"}
 TASK_STATUS_OK = {"todo", "doing", "review", "done", "blocked"}
 
@@ -76,9 +77,11 @@ def check_status_vocab() -> None:
 
 def main() -> int:
     cfg = load_config()
-    prefix = str(cfg.get("req_prefix", "")).strip()
+    req = cfg.get("requirements") or {}
+    prefix = str(req.get("prefix", "")).strip()
     if not prefix:
-        sys.exit("ERROR: project.yaml に req_prefix がない")
+        sys.exit("ERROR: project.yaml に requirements.prefix がない"
+                 "(v1 の req_prefix は v2 で requirements.prefix へ移した)")
     req_re = re.compile(rf"REQ-{re.escape(prefix)}-\d{{3}}")
     deprecated = {f"REQ-{prefix}-{int(n):03d}" for n in cfg.get("deprecated_reqs") or []}
     layers = cfg.get("layers") or {}
@@ -90,8 +93,13 @@ def main() -> int:
     # インセプション出力(docs/proposals/inception)が仕様適用前にREQ IDを提案できる根拠。
     exclude = tuple(str(x).strip("/") for x in (cfg.get("scan_exclude") or ["docs/proposals"]))
 
-    specs = sorted(ROOT.glob(str(cfg.get("spec_glob", "docs/spec/*SPEC*.md"))))
-    spec = specs[-1] if specs else None
+    # 仕様書を glob で自動選択しない。文字列ソートでは v0.10 が v0.9 より前に
+    # 並ぶため誤った版が選ばれ、front-matter の status(superseded / draft)も
+    # 見られない。どれが有効かは project.yaml で人間が明示する。
+    active = str(req.get("active_spec", "")).strip()
+    spec = (ROOT / active) if active else None
+    if spec is not None and not spec.exists():
+        sys.exit(f"ERROR: requirements.active_spec のファイルが無い({active})")
 
     skip = {Path(__file__).resolve()} | {(ROOT / n).resolve() for n in cfg.get("l0_exempt") or []}
     if spec is not None:
@@ -110,7 +118,16 @@ def main() -> int:
                 for req in sorted(reqs):
                     errors.append(f"[幽霊REQ] {p.relative_to(ROOT)}: {req}(仕様書が未作成)")
         else:
-            print("spec: 未作成(インセプション前)・REQ参照なし — skip")
+            # 「検査して合格した」ではなく「まだ検査対象が無い」。緑に数えない。
+            print("REQ: 未装備(requirements.active_spec が未設定"
+                  " — インセプション N1 で確定する)")
+            check_status_vocab()
+            if errors:
+                print(f"NG: {len(errors)}件")
+                for e in errors:
+                    print("  " + e)
+                return 1
+            return UNARMED
     else:
         defined = refs_in(spec, req_re)
         print(f"spec: {spec.relative_to(ROOT)} / 定義REQ {len(defined)}件 / 廃止 {len(deprecated)}件")
