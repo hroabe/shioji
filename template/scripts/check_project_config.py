@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SPEC_DIR = ROOT / "docs" / "spec"
 SCHEMA_VERSION = 2
 
 PREFIX_RE = re.compile(r"^[A-Z]{2,5}$")
@@ -55,13 +56,22 @@ def num_in(errs: list, key: str, value, lo: float, hi: float | None) -> None:
 
 
 def check_spec(errs: list, spec: str) -> None:
-    """active_spec は L1 の実在ファイルで、status: active であること。"""
+    """active_spec は L1 の実在ファイルで、status: active であること。
+
+    包含判定は解決後のパスで行う。文字列の前方一致では
+    docs/spec/../../../PROCESS.md のような指定が通ってしまい、L1 の外にある
+    文書(status: active を持つ)が正典の仕様書として扱われる。
+    resolve() はシンボリックリンクも辿るため、リンクによる脱出も塞がる。
+    """
     path = ROOT / spec
     if not path.exists():
         errs.append(f"requirements.active_spec: ファイルが無い({spec})")
         return
-    if not spec.replace("\\", "/").startswith("docs/spec/"):
-        errs.append(f"requirements.active_spec: L1(docs/spec/)の外を指している({spec})")
+    resolved = path.resolve()
+    if not resolved.is_relative_to(SPEC_DIR.resolve()):
+        errs.append(f"requirements.active_spec: L1(docs/spec/)の外を指している"
+                    f"({spec} → {resolved})")
+        return
     head = path.read_text(encoding="utf-8")[:800]
     status = re.search(r"^status:\s*(\S+)\s*$", head, re.MULTILINE)
     if not status:
@@ -134,6 +144,12 @@ def check_oracle(errs: list, oracle) -> None:
     for key in ("reference_dir", "predictions_dir"):
         if not str(oracle.get(key, "")).strip():
             errs.append(f"oracle.{key}: 必須")
+    # validate_oracle.py が無条件に参照するキー。欠けていると、参照CSVを
+    # 投入した時点で KeyError で落ちる。設定検査の時点で必須にする。
+    if not str(oracle.get("order_by", "")).strip():
+        errs.append("oracle.order_by: 必須(整列に使う列。欠けると照合時に落ちる)")
+    if "order_tolerance" not in oracle:
+        errs.append("oracle.order_tolerance: 必須(order_by の許容。欠けると照合時に落ちる)")
     if "pass_rate" in oracle:
         num_in(errs, "oracle.pass_rate", oracle["pass_rate"], 0, 1)
     if "order_tolerance" in oracle:

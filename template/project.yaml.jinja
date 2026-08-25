@@ -1,6 +1,7 @@
 # project.yaml — プロセス設定のSSoT(潮路キット生成)
 # 汎用スクリプト(scripts/*.py)はこのファイルだけを読む。
-# このファイル自体は scripts/check_project_config.py が検査する(ゲート列の先頭)。
+# このファイル自体は scripts/check_project_config.py が検査する
+# (run_gates.py が gates 列より前に無条件で実行する。下の gates には書かない)。
 # 編集規則:
 #   - gates への行追加・stack の調整はエージェント提案可(DECISIONS 記録)。
 #   - oracle の values / pass_rate / metrics は人間が確定した後は変更禁止(CLAUDE.md §2-1)。
@@ -8,10 +9,10 @@
 #   - deprecated_reqs への追加も同上。
 schema_version: 2
 
-project: {{ project_name }}
+project: "{{ project_name }}"
 
 requirements:
-  prefix: {{ req_prefix }}                 # 注記形式: REQ-{{ req_prefix }}-nnn(3桁)
+  prefix: "{{ req_prefix }}"                 # 注記形式: REQ-{{ req_prefix }}-nnn(3桁)
   # 有効な仕様書を1つだけ明示する。glob で自動選択しない
   # (文字列ソートでは v0.10 が v0.9 より前に並び、front-matter の status も見られない)。
   # 空の間、REQ整合ゲートは「未装備」として報告される(緑には数えない)。
@@ -54,9 +55,10 @@ stack:
 # make guard / pre-commit / CI guardrails が同一列を実行する。
 # argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、
 # そこに書かれた文字列をシェルに解釈させない。複雑な処理は scripts/*.py へ置く。
+# 設定検査(scripts/check_project_config.py)はここに書かない。
+# run_gates.py が gates 列より前に無条件で実行する。設定を検査する仕組みを、
+# 設定から消せる場所に置かないため。
 gates:
-  - id: config                             # 設定の異常を最初に落とす(fail fast)
-    argv: [python, scripts/check_project_config.py]
   - id: req-links
     argv: [python, scripts/check_req_links.py]
   - id: oracle

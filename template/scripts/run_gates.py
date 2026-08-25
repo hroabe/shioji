@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # ゲートが「未装備」を自己申告する終了コード
 STATUS_PATH = ROOT / "verification" / "gate_status.json"
+CONFIG_CHECK = ROOT / "scripts" / "check_project_config.py"
 TASK_INDEX = ROOT / "TASK_INDEX.md"
 
 # 表の行: | T-001 | タスク | REQ | 依存 | 担当 | status |
@@ -90,7 +91,17 @@ def run(label: str, argv: list, protocol: bool = True) -> bool:
     if argv and argv[0] == "python":
         argv[0] = sys.executable
     print(f"== {label}: {' '.join(argv)}", flush=True)
-    proc = subprocess.run(argv, cwd=ROOT, env=utf8_io())
+    try:
+        proc = subprocess.run(argv, cwd=ROOT, env=utf8_io())
+    except OSError as error:
+        # shell を経由しないため、実行ファイルが PATH に無いと例外になる。
+        # shell=True のときは非ゼロ終了で赤になっていた。トレースバックではなく
+        # ゲートの赤として扱う。
+        sys.exit("\n".join([
+            f"NG: ゲート '{label}' のコマンドを実行できない: {argv[0]}",
+            f"    {error}",
+            "    実行ファイルが PATH にあるか、project.yaml の argv を確認すること",
+        ]))
     if protocol and proc.returncode == UNARMED:
         return False
     if proc.returncode != 0:
@@ -144,8 +155,20 @@ def main() -> int:
     cfg = load_config()
     results: list = []
 
+    # 設定検査は gates 列に依存させない。
+    # gates 自体が project.yaml の中にあるため、「設定を検査するゲート」を
+    # 設定から消す・改名する・壊れたゲートの後ろへ移す、のどれでも強制が外れる。
+    # 自分を検査する仕組みを、自分が編集できる場所に置かない。
+    if not CONFIG_CHECK.exists():
+        sys.exit("NG: scripts/check_project_config.py が無い(設定検査は必須)")
+    run("config", ["python", CONFIG_CHECK.relative_to(ROOT).as_posix()])
+    results.append({"id": "config", "state": "pass",
+                    "note": "組み込み(gates 列に依存しない)"})
+
     for gate in cfg.get("gates") or []:
         label = str(gate.get("id", "?"))
+        if any("check_project_config.py" in str(a) for a in (gate.get("argv") or [])):
+            continue                      # 組み込みで実行済み
         if not gate.get("argv"):
             sys.exit(f"NG: ゲート '{label}' に argv がない。"
                      "v2 では cmd ではなく argv を使う"

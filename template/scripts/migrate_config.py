@@ -11,7 +11,8 @@ v1 -> v2 の差分:
   gates[].cmd         -> gates[].argv(shell を経由しない)
   gates[].cutover.cmd -> gates[].cutover.argv
   stack.analyze/test  -> argv のリスト
-  (追加) schema_version: 2 / stack.by_task / config ゲート
+  (追加) schema_version: 2 / stack.by_task
+  (除去) gates 内の設定検査 — run_gates.py の組み込みになったため
 
   引数なし : 変換結果を標準出力に出す(ファイルは変更しない)
   --write  : project.yaml を上書きする
@@ -22,8 +23,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "project.yaml"
-
-CONFIG_GATE = {"id": "config", "argv": ["python", "scripts/check_project_config.py"]}
 
 
 def to_argv(value) -> list:
@@ -47,21 +46,28 @@ def resolve_spec(glob: str, notes: list) -> str:
     return ""
 
 
-def migrate(cfg: dict, notes: list) -> dict:
-    out: dict = {"schema_version": 2, "project": cfg.get("project", "")}
+# v1 で使い、v2 で別の場所へ移したキー。これ以外は素通しする。
+DROPPED = {"schema_version", "req_prefix", "spec_glob"}
 
-    req = dict(cfg.get("requirements") or {})
+
+def migrate(cfg: dict, notes: list) -> dict:
+    """v1 の設定を v2 へ。**既知のキーだけを拾い直さない。**
+
+    project.yaml は生成後プロジェクトの所有物で、独自ゲートのための固有の節を
+    持ちうる。ホワイトリストで組み直すと、そうした節が黙って消え、残ったゲートが
+    設定を失ったまま走る。v1 のキーだけを変換し、他はそのまま残す。
+    """
+    out: dict = {"schema_version": 2}
+    out.update({k: v for k, v in cfg.items() if k not in DROPPED})
+
+    req = dict(out.get("requirements") or {})
     req.setdefault("prefix", cfg.get("req_prefix", ""))
     if "active_spec" not in req:
-        req["active_spec"] = resolve_spec(str(cfg.get("spec_glob") or ""), notes) \
-            if cfg.get("spec_glob") else ""
+        glob = str(cfg.get("spec_glob") or "")
+        req["active_spec"] = resolve_spec(glob, notes) if glob else ""
     out["requirements"] = req
 
-    for key in ("deprecated_reqs", "layers", "scan_ext", "l0_exempt", "scan_exclude"):
-        if key in cfg:
-            out[key] = cfg[key]
-
-    stack = dict(cfg.get("stack") or {})
+    stack = dict(out.get("stack") or {})
     stack.setdefault("by_task", "T-001")
     for key in ("analyze", "test"):
         value = stack.get(key)
@@ -75,7 +81,7 @@ def migrate(cfg: dict, notes: list) -> dict:
     out["stack"] = stack
 
     gates = []
-    for gate in cfg.get("gates") or []:
+    for gate in out.get("gates") or []:
         g = dict(gate)
         if "cmd" in g:
             g["argv"] = to_argv(g.pop("cmd"))
@@ -89,12 +95,11 @@ def migrate(cfg: dict, notes: list) -> dict:
                              "TASK_INDEX の実在タスクに合わせること")
             g["cutover"] = cut
         gates.append(g)
-    if not any(g.get("id") == "config" for g in gates):
-        gates.insert(0, CONFIG_GATE)
+    # 設定検査は run_gates.py の組み込みになったので gates 列には入れない。
+    # v1 で明示的に置かれていた場合は取り除く(二重実行を避ける)。
+    gates = [g for g in gates
+             if not any("check_project_config.py" in str(a) for a in (g.get("argv") or []))]
     out["gates"] = gates
-
-    if "oracle" in cfg:
-        out["oracle"] = cfg["oracle"]
     return out
 
 
