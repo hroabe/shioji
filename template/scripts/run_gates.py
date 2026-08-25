@@ -71,17 +71,22 @@ def task_status(task_id: str | None) -> str | None:
     return None
 
 
-def run(label: str, cmd: str) -> bool:
+def run(label: str, cmd: str, protocol: bool = True) -> bool:
     """ゲートを1件実行する。装備済みで合格なら True、未装備なら False。
 
-    赤(0でも UNARMED でもない)なら、その場で終了する。
+    赤ならその場で終了する。
+
+    protocol=False は、この規約を知らない任意のコマンド(stack.analyze /
+    stack.test など)向け。終了コード 3 を未装備と解釈してはならない。
+    pytest は exit 3 を internal error として使う — 規約を押し付けると
+    クラッシュが緑になる。
     """
     # gates の "python ..." は現在のインタプリタ(venv/CI)で実行し、環境差を作らない
     if cmd.startswith("python "):
         cmd = f'"{sys.executable}" ' + cmd[len("python "):]
     print(f"== {label}: {cmd}", flush=True)
     proc = subprocess.run(cmd, cwd=ROOT, shell=True, env=utf8_io())
-    if proc.returncode == UNARMED:
+    if protocol and proc.returncode == UNARMED:
         return False
     if proc.returncode != 0:
         sys.exit(f"NG: ゲート '{label}' が赤 (exit {proc.returncode})")
@@ -152,12 +157,17 @@ def main() -> int:
             results.append({"id": label, "state": "unarmed",
                             "note": f"期限 {by_task}" if by_task else "期限なし"})
 
+    # 期限の検査は --all の有無に関わらず行う。
+    # 「スタック検証を実行するか」と「期限を過ぎていないか」は別の問題であり、
+    # guardrails(--all なし)でも期限切れは検出されなければならない。
+    stack = cfg.get("stack") or {}
+    marker = str(stack.get("ready_marker") or "").strip()
+    ready = bool(marker) and (ROOT / marker).exists()
+    if not ready:
+        check_deadline("stack", stack.get("by_task"))
+
     if "--all" in argv:
-        stack = cfg.get("stack") or {}
-        marker = str(stack.get("ready_marker") or "").strip()
-        by_task = stack.get("by_task")
-        if not marker or not (ROOT / marker).exists():
-            check_deadline("stack", by_task)
+        if not ready:
             note = f"ready_marker: {marker or '未設定'}"
             print(f"== stack: 未装備({note})", flush=True)
             results.append({"id": "stack", "state": "unarmed", "note": note})
@@ -165,7 +175,8 @@ def main() -> int:
             for key in ("analyze", "test"):
                 cmd = str(stack.get(key) or "").strip()
                 if cmd:
-                    run(f"stack.{key}", cmd)
+                    # 任意のコマンドなので exit 3 も赤。protocol=False。
+                    run(f"stack.{key}", cmd, protocol=False)
                     results.append({"id": f"stack.{key}", "state": "pass", "note": ""})
 
     return report(results, strict)

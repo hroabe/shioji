@@ -7,7 +7,8 @@ verification/predictions/(決定論ハーネスの出力)を、project.yaml の 
 合格させることを禁ずる(CLAUDE.md §2-1)。oracle 節の許容値は人間確定後、変更禁止。
 
 モード:
-  --dry-run   oracle未定義・参照未投入なら通知して exit 3(未装備)。あれば判定するが exit 0(レポートのみ)。
+  --dry-run   常に exit 3(未装備)。参照があれば合否を表示するが、それは参考であって
+              判定ではない。装備は --gate への切替(人間ゲート)をもって成立する。
   --gate      本判定。oracle未定義・参照不在・予測欠落・合格率未達は exit 1。切替は人間ゲート(CLAUDE.md §5)。
   --selftest  整列・判定ロジック自体の検査(CIで実行)。
 
@@ -197,8 +198,10 @@ def run_check(gate: bool) -> int:
     if gate:
         print("GATE " + ("OK" if all_passed else "NG"))
         return 0 if all_passed else 1
-    print("DRY-RUN 終了(合否は参考 — --gate 切替は人間ゲート)")
-    return 0
+    # dry-run は装備されていない。合否を表示しても「合格」として数えさせない。
+    # ここで 0 を返すと、失敗しているのに run_gates が緑に数えてしまう。
+    print("DRY-RUN 終了(未装備 — 合否は参考。--gate 切替は人間ゲート)")
+    return UNARMED
 
 
 def selftest() -> int:
