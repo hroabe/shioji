@@ -1,5 +1,6 @@
 # 検証ゲートのCI配線(潮路キット生成)。ゲート定義は CLAUDE.md §4 / project.yaml。
-# guardrails は make guard / pre-commit と同一のゲート列(scripts/run_gates.py)を実行する。
+# guardrails / stack とも make guard / pre-commit と同一のゲート列
+# (scripts/run_gates.py)を実行する。検証コマンドをここに直書きしない。
 name: ci
 on: [push, pull_request]
 jobs:
@@ -18,37 +19,49 @@ jobs:
       # なったのに装備されていなければ、--strict なしでも赤になる。
       # --strict はリリース前・監査時に人間が明示的に実行する。
       - run: python scripts/run_gates.py
-{% if stack == 'flutter' %}
+{% if stack != 'manual' %}
   stack:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+{% if stack == 'flutter' %}
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - run: |
-          if [ -f pubspec.yaml ]; then flutter pub get && flutter analyze && flutter test; else echo "スタック未初期化(T-001)— skip"; fi
 {% elif stack == 'node' %}
-  stack:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: |
-          if [ -f package.json ]; then npm ci && npm run lint --silent && npm test --silent; else echo "スタック未初期化(T-001)— skip"; fi
-{% elif stack == 'python' %}
-  stack:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+{% endif %}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: |
-          if [ -f pyproject.toml ]; then pip install -e ".[dev]" && ruff check . && pytest -q; else echo "スタック未初期化(T-001)— skip"; fi
+      - run: pip install -r requirements.txt
+      # 依存の取得は検証ではないので、manifest がある間だけ行う。
+      # ここが step レベルの if: なのは意図的で、job レベルの if: とは別物である。
+      # job レベルでスキップされたジョブは Success として報告され、required
+      # status check に指定していてもマージを妨げない。step のスキップでは
+      # ジョブ自体が走り続けるため、その穴は開かない。
+{% if stack == 'flutter' %}
+      - run: flutter pub get
+        if: hashFiles('pubspec.yaml') != ''
+{% elif stack == 'node' %}
+      - run: npm ci
+        if: hashFiles('package.json') != ''
+{% elif stack == 'python' %}
+      - run: pip install -e ".[dev]"
+        if: hashFiles('pyproject.toml') != ''
+{% endif %}
+      # 検証そのものは run_gates.py が判定する。
+      # ready_marker が無い間は「未装備」と報告され、期限(project.yaml の
+      # stack.by_task)を過ぎていれば赤になる。
+      # 以前はここに `if [ -f ... ]; then ...; else echo "skip"; fi` と書いていたが、
+      # これは検証を飛ばして成功する経路であり、期限も評価されなかった。
+      - run: python scripts/run_gates.py --all
 {% else %}
-  # スタックジョブは T-002 で配線する(project.yaml の stack 節と同じコマンドを使うこと)
+  # スタックジョブは T-002 で配線する。
+  # 検証コマンドは project.yaml の stack 節に書き、ここでは
+  # `python scripts/run_gates.py --all` を呼ぶだけにすること
+  # (ローカルとCIで別のコマンドを持たない — PROCESS.md §5-4)。
 {% endif %}
