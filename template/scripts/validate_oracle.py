@@ -7,7 +7,7 @@ verification/predictions/(決定論ハーネスの出力)を、project.yaml の 
 合格させることを禁ずる(CLAUDE.md §2-1)。oracle 節の許容値は人間確定後、変更禁止。
 
 モード:
-  --dry-run   oracle未定義・参照未投入なら通知して exit 0。あれば判定するが exit 0(レポートのみ)。
+  --dry-run   oracle未定義・参照未投入なら通知して exit 3(未装備)。あれば判定するが exit 0(レポートのみ)。
   --gate      本判定。oracle未定義・参照不在・予測欠落・合格率未達は exit 1。切替は人間ゲート(CLAUDE.md §5)。
   --selftest  整列・判定ロジック自体の検査(CIで実行)。
 
@@ -26,6 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+UNARMED = 3                       # 未装備(run_gates.py が「緑」と区別して数える)
 
 
 def load_oracle_config():
@@ -173,8 +174,8 @@ def run_check(gate: bool) -> int:
         if gate:
             print("NG: project.yaml に oracle 節が無いまま --gate は実行できない(インセプションN1で確定)")
             return 1
-        print("oracle: 未定義(インセプション N1 で project.yaml の oracle 節を確定すると有効化)— skip")
-        return 0
+        print("oracle: 未装備(インセプション N1 で project.yaml の oracle 節を確定すると有効化)")
+        return UNARMED
     ref_dir = ROOT / str(cfg.get("reference_dir", "verification/reference"))
     pred_dir = ROOT / str(cfg.get("predictions_dir", "verification/predictions"))
     refs = sorted(ref_dir.glob("*.csv")) if ref_dir.exists() else []
@@ -182,8 +183,8 @@ def run_check(gate: bool) -> int:
         if gate:
             print(f"NG: 参照データが無い({ref_dir.relative_to(ROOT)}/ — 投入は人間ゲート)")
             return 1
-        print(f"oracle: 参照データ未投入({ref_dir.relative_to(ROOT)}/)— 通知のみ・skip")
-        return 0
+        print(f"oracle: 未装備(参照データ未投入: {ref_dir.relative_to(ROOT)}/)")
+        return UNARMED
     all_passed = True
     for ref_path in refs:
         pred_path = pred_dir / ref_path.name

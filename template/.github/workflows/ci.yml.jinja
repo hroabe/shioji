@@ -11,7 +11,16 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: python scripts/run_gates.py
+      # main では未装備(検証していないゲート)を赤とする。
+      # job/step の if: を使わないのは、スキップされたジョブが Success として
+      # 報告され、required check であってもマージを妨げないため。
+      - name: ゲート実行
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            python scripts/run_gates.py --strict
+          else
+            python scripts/run_gates.py
+          fi
 {% if stack == 'flutter' %}
   stack:
     runs-on: ubuntu-latest

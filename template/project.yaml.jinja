@@ -18,6 +18,7 @@ l0_exempt: [CLAUDE.md, AGENTS.md]          # 廃止REQを名指しできる文�
 scan_exclude: [docs/proposals]             # 提案は下書き(未定義/将来/却下のREQを含み得る)— REQ検査から除外
 
 stack:
+  by_task: T-001                           # done になったら ready_marker の成立を要求する(未装備の失効)
 {% if stack == 'flutter' %}
   app_manifest: pubspec.yaml               # アプリ本体の依存台帳(追加は人間ゲート — CLAUDE.md §6)
   ready_marker: pubspec.yaml               # 不在の間、stack系コマンドは自動skip(0日目から緑)
@@ -42,7 +43,11 @@ stack:
 
 gates:                                     # make guard / pre-commit / CI guardrails が同一列を実行
   - {id: req-links, cmd: python scripts/check_req_links.py}
-  - {id: oracle, cmd: python scripts/validate_oracle.py --dry-run}   # --gate 切替は人間(CLAUDE.md §5)
+  - id: oracle
+    cmd: python scripts/validate_oracle.py --dry-run
+    cutover:                             # T-003 が done になったら自動で --gate へ切り替える
+      cmd: python scripts/validate_oracle.py --gate
+      by_task: T-003                     # 切替の判断は人間(T-003 を done にすること)
 
 # oracle:                                  # 精度ゲート定義(インセプション N1 で確定 — PROCESS.md §6)
 #   reference_dir: verification/reference  # 参照オラクル(人間投入・エージェント改変禁止)
