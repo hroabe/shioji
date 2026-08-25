@@ -131,7 +131,7 @@ def check_stack(errs: list, stack) -> None:
             errs.append(f"stack.{key}: argv のリストにする(例: [[cmd, arg], [cmd2, arg2]])")
 
 
-def check_oracle(errs: list, oracle) -> None:
+def check_oracle(errs: list, warns: list, oracle) -> None:
     if not isinstance(oracle, dict):
         errs.append("oracle: マッピングにする")
         return
@@ -144,6 +144,21 @@ def check_oracle(errs: list, oracle) -> None:
     for key in ("reference_dir", "predictions_dir"):
         if not str(oracle.get(key, "")).strip():
             errs.append(f"oracle.{key}: 必須")
+    # 予測の再生成は predictions_dir の *.csv を消してから行う。
+    # そこが参照オラクルと同じ・入れ子だと、人間専管の参照データを消したうえで
+    # 同じファイルを参照とも予測とも読むことになり、必ず一致して緑になる。
+    ref_dir, pred_dir = (str(oracle.get(k, "")).strip()
+                         for k in ("reference_dir", "predictions_dir"))
+    if ref_dir and pred_dir:
+        r, p = (ROOT / ref_dir).resolve(), (ROOT / pred_dir).resolve()
+        if r == p or p.is_relative_to(r) or r.is_relative_to(p):
+            errs.append("oracle.predictions_dir: reference_dir と同じ・入れ子にしない"
+                        f"({pred_dir} / {ref_dir}) — 予測の再生成が参照オラクルを消し、"
+                        "同じファイルを参照と予測の両方として読んで必ず緑になる")
+    # 予測を毎回作り直せないと、実装を壊しても古い予測のまま合格しうる。
+    if not is_argv(oracle.get("generate")):
+        errs.append("oracle.generate: 必須(argv 形式)。現在のコードから予測を"
+                    "再生成する手順が無いと、古い予測のまま合格しうる")
     # validate_oracle.py が無条件に参照するキー。欠けていると、参照CSVを
     # 投入した時点で KeyError で落ちる。設定検査の時点で必須にする。
     if not str(oracle.get("order_by", "")).strip():
@@ -159,24 +174,53 @@ def check_oracle(errs: list, oracle) -> None:
     values = oracle.get("values")
     if values is not None and (not isinstance(values, dict) or not values):
         errs.append("oracle.values: 非空のマッピングにする(値列 → 絶対許容誤差)")
-    metrics = oracle.get("metrics") or {}
-    if not isinstance(metrics, dict):
-        errs.append("oracle.metrics: マッピングにする")
+    for key in ("f1_min",):
+        if key in oracle:
+            errs.append(f"oracle.{key}: oracle.metrics の中に置く")
+    metrics = oracle.get("metrics")
+    if metrics is None:
+        warns.append("oracle.metrics が未設定 — pass_rate を recall として使い、"
+                     "precision は無制限になる(誤検出を何件出しても合格しうる)。"
+                     "metrics.recall_min / precision_min の設定を検討すること")
         return
-    for key in ("recall_min", "precision_min", "f1_min"):
+    if not isinstance(metrics, dict) or not metrics:
+        errs.append("oracle.metrics: 非空のマッピングにする")
+        return
+    # 綴り違いを黙って無視しない。metrics が非空であれば thresholds() は
+    # そちらを採用し、認識できないキーしか無い場合は基準が 0 になる。
+    # つまり recall_mim と書いた瞬間、TPが0でも合格する状態になる。
+    known = {"recall_min", "precision_min", "f1_min"}
+    unknown = sorted(set(metrics) - known)
+    if unknown:
+        errs.append(f"oracle.metrics: 未知のキー {unknown} — 綴りを確認する"
+                    "(認識されないキーは判定に効かず、ゲートが無効になる)")
+    if not (set(metrics) & known):
+        errs.append(f"oracle.metrics: {sorted(known)} のいずれかを設定する")
+    for key in sorted(known):
         if key in metrics:
             num_in(errs, f"oracle.metrics.{key}", metrics[key], 0, 1)
 
 
-def main() -> int:
+def use_utf8() -> None:
+    """自分の出力を UTF-8 に固定する。
+
+    Windows の既定は cp932 で、日本語や — を含む出力が UnicodeEncodeError で
+    落ちる。run_gates.py 経由なら子プロセスに PYTHONUTF8 が渡るが、この
+    スクリプトは単体でも実行される(CLAUDE.md §4)。
+    """
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
 
+
+def main() -> int:
+    use_utf8()
+
     cfg = load()
     errs: list[str] = []
+    warns: list[str] = []
 
     version = cfg.get("schema_version")
     if version != SCHEMA_VERSION:
@@ -212,14 +256,17 @@ def main() -> int:
     check_gates(errs, cfg.get("gates"))
     check_stack(errs, cfg.get("stack"))
     if cfg.get("oracle") is not None:
-        check_oracle(errs, cfg["oracle"])
+        check_oracle(errs, warns, cfg["oracle"])
 
+    for w in warns:
+        print(f"  警告: {w}")
     if errs:
         print("NG: project.yaml の設定に問題がある", file=sys.stderr)
         for e in errs:
             print(f"  - {e}", file=sys.stderr)
         return 1
-    print("OK: project.yaml の設定に問題なし")
+    print("OK: project.yaml の設定に問題なし"
+          + (f"(警告 {len(warns)}件)" if warns else ""))
     return 0
 
 

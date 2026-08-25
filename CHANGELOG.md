@@ -59,6 +59,32 @@
 上記はいずれも破壊的変更のため、**0.2.0** への版上げを提案する(SemVer では
 0.x のマイナー版が破壊的変更を表す)。タグ付け=リリースは人間ゲート。
 
+### 破壊的変更 — oracle に generate を必須化（同上・0.2.0）
+
+オラクルを設定しているプロジェクトは、`oracle.generate` を追加するまでゲートが赤になる。
+
+```yaml
+oracle:
+  generate: [python, scripts/generate_predictions.py]   # 追加(必須)
+  predictions_dir: .verification/predictions            # 変更を推奨(gitignore 済み)
+  metrics:                                              # 追加を推奨
+    recall_min: 0.95
+    precision_min: 0.95
+```
+
+- **予測を毎回作り直す** — 正しい実装で予測を作って合格させたあと実装を壊しても、
+  古い予測が残っていれば合格し続けていた。照合対象を常に「いまのコードの出力」に固定する。
+  生成前に `predictions_dir` の `*.csv` を消すため、生成が途中で失敗しても古い予測は残らない。
+  生成の失敗は未装備ではなく赤。
+- **参照イベント0件を合格にしない** — 従来は `rate = ok/denom if denom else 1.0` で、
+  ヘッダ行だけのCSVが100%合格になっていた。
+- **precision で誤検出を落とせる** — 従来 `extra` は件数表示のみで合否に影響しなかった。
+  正解100件を全部当てても誤検出を10,000件出せば合格する状態だった。
+  `metrics.recall_min` / `precision_min` / `f1_min` で判定する。
+  `metrics` 未設定なら `pass_rate` を `recall_min` として使う従来挙動を保つが、
+  precision が無制限になるため設定検査が警告する。
+- `oracle.values` 未設定のときは値を比較していない旨を出力に明示する。
+
 ### その他
 
 - **fix(gate): 未装備と合格を分けて報告**(`緑N件 / 未装備M件`・`gate_status.json`・
@@ -67,9 +93,9 @@
 - **fix(ci): 生成CIのスタックジョブから `if [ -f ... ]; then ...; else echo skip; fi`
   を撤去**し `run_gates.py --all` へ寄せた。検証を飛ばして成功する経路であり、
   `stack.by_task` の期限も評価されていなかった
-- **fix(scripts): Windows(cp932)で日本語のゲート出力が UnicodeEncodeError で落ちる**
+- **fix(scripts): Windows(cp932)で日本語の出力が UnicodeEncodeError で落ちる**
   問題を修正。pre-commit フックだけが `PYTHONUTF8` を立てており、`make guard` /
-  CI から直接呼ばれる経路が保護されていなかった
+  CI から直接呼ばれる経路が保護されていなかった。単体実行(`python scripts/validate_oracle.py --gate` など。CLAUDE.md §4 が案内している)も落ちていたため、全スクリプトで自分の出力を UTF-8 に固定した
 - **fix(copier): validator を説明文と一致させた**。`foo_bar` / `foo.bar` /
   `foo/bar` / 日本語 / `-foo` / `foo--bar`、`req_prefix` の `A1` などが通っていた
 

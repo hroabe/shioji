@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 verification/gate_status.json
+.verification/
+verification/predictions/

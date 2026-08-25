@@ -103,12 +103,22 @@ def migrate(cfg: dict, notes: list) -> dict:
     return out
 
 
-def main() -> int:
+def use_utf8() -> None:
+    """自分の出力を UTF-8 に固定する。
+
+    Windows の既定は cp932 で、日本語や — を含む出力が UnicodeEncodeError で
+    落ちる。run_gates.py 経由なら子プロセスに PYTHONUTF8 が渡るが、この
+    スクリプトは単体でも実行される(CLAUDE.md §4)。
+    """
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
+
+
+def main() -> int:
+    use_utf8()
     try:
         import yaml
     except ModuleNotFoundError:

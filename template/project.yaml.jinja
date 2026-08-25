@@ -68,12 +68,16 @@ gates:
       by_task: T-003                       # 切替の判断は人間(T-003 を done にすること)
 
 # oracle:                                  # 精度ゲート定義(インセプション N1 で確定 — PROCESS.md §6)
+#   generate: [python, scripts/generate_predictions.py]   # 毎回ここから予測を作り直す(必須)
 #   reference_dir: verification/reference  # 参照オラクル(人間投入・エージェント改変禁止)
-#   predictions_dir: verification/predictions
+#   predictions_dir: .verification/predictions            # 生成物。gitignore 済み
 #   match: ordered                         # exact(キー完全一致) | ordered(時系列整列)。未知の値は赤
 #   group_by: [kind]                       # 系列を分ける列(例: 満潮H/干潮L)
 #   order_by: time                         # 整列列。ISO8601("2026-07-09 17:42")または数値
 #   order_tolerance: 10                    # order_by の許容(日時なら分)
 #   order_window: 360                      # 対応付け探索窓(日時なら分)
-#   values: {height_cm: 15.0}              # 値列 → 絶対許容誤差
-#   pass_rate: 0.95                        # 合格率(missing を分母に含む)
+#   values: {height_cm: 15.0}              # 値列 → 絶対許容誤差。未設定だと値を比較しない
+#   metrics:                               # 未設定だと precision が無制限(誤検出し放題)
+#     recall_min: 0.95                     # TP / 参照イベント数(取りこぼし)
+#     precision_min: 0.95                  # TP / 予測イベント数(誤検出)
+#   # pass_rate: 0.95                      # metrics 未設定時のみ recall_min として使う(旧式)
