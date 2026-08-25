@@ -48,3 +48,33 @@ jobs:
           python-version: '3.12'
       - run: pip install ruff
       - run: ruff check --select E,F --ignore E501 template/scripts
+
+  # ブランチ保護の必須チェックには、このジョブ「だけ」を指定する。
+  #
+  # 個別のジョブ名(instantiate (manual) など)を必須に指定すると、matrix に
+  # stack を足したとき、新しいジョブが必須リストに入らないまま落ちてもマージ
+  # できてしまう。設定の追従を人間の記憶に頼ることになる。
+  #
+  # さらに GitHub Actions は if: でスキップされたジョブを Success として報告し、
+  # required に指定していてもマージを妨げない。
+  # 再現: https://github.com/hroabe/verifier-integrity-demo
+  #
+  # always() で必ず走らせ、依存ジョブの result を明示的に検査する。
+  # skipped も cancelled も success ではない、として扱う。
+  required-checks:
+    if: always()
+    needs: [instantiate, lint-scripts]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 依存ジョブの結果を検査する
+        run: |
+          echo "instantiate  = ${{ needs.instantiate.result }}"
+          echo "lint-scripts = ${{ needs.lint-scripts.result }}"
+          ok=1
+          [ "${{ needs.instantiate.result }}"  = "success" ] || ok=0
+          [ "${{ needs.lint-scripts.result }}" = "success" ] || ok=0
+          if [ "$ok" != "1" ]; then
+            echo "NG: success でない結果がある(skipped / cancelled も success ではない)"
+            exit 1
+          fi
+          echo "OK: すべて success"
