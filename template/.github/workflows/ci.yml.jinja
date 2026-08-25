@@ -11,6 +11,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
+      # 未装備のゲートは gate_status.json と Job Summary に出る。
+      # ここで --strict を使わないのは、0日目は oracle も stack も未装備であり、
+      # 生成直後の main が赤になってしまうため(0日目から緑の原則)。
+      # 未装備の失効は project.yaml の by_task が担う。期限のタスクが done に
+      # なったのに装備されていなければ、--strict なしでも赤になる。
+      # --strict はリリース前・監査時に人間が明示的に実行する。
       - run: python scripts/run_gates.py
 {% if stack == 'flutter' %}
   stack:
