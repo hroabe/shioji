@@ -240,6 +240,19 @@ def regenerate(cfg: dict, pred_dir: Path, gate: bool):
     argv = [str(a) for a in argv]
     if argv[0] == "python":
         argv[0] = sys.executable
+
+    # 消す前に、消してよい場所かを確かめる。
+    # 参照オラクルは人間専管であり、ここで消えると「同じファイルを参照とも
+    # 予測とも読む」状態になって必ず緑になる。設定検査でも弾いているが、
+    # 破壊的操作の直前でもう一度確かめる。
+    ref_dir = (ROOT / str(cfg.get("reference_dir", "verification/reference"))).resolve()
+    target = pred_dir.resolve()
+    if target == ref_dir or target.is_relative_to(ref_dir) or ref_dir.is_relative_to(target):
+        print("NG: predictions_dir が reference_dir と同じか入れ子になっている"
+              f"({target} / {ref_dir})")
+        print("    再生成で参照オラクルを消してしまうため、何も削除せずに中止する")
+        return 1
+
     pred_dir.mkdir(parents=True, exist_ok=True)
     # 生成が途中で失敗しても古い予測が残らないよう、先に消す。
     for stale in pred_dir.glob("*.csv"):
