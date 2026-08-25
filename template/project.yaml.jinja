@@ -52,6 +52,30 @@ stack:
   test: []
 {% endif %}
 
+# 人間専管のもの。エージェントのコミット(CLAUDE.md §3 の `Agent:` トレーラ)が
+# これらを変更していたら赤にする。
+# 検出であって最終的な強制ではない — トレーラを書かなければ回避できる。
+# GitHub 側の CODEOWNERS + 必須レビューと併せて置くこと(T-004)。
+protected:
+  by_task: T-004                           # done になったら保護の配線を要求する
+  paths:
+    - CLAUDE.md                            # L0 契約
+    - AGENTS.md
+    - docs/spec/**                         # L1 規範
+    - verification/reference/**            # 参照オラクル(エージェント生成禁止)
+    - test/golden/**                       # ゴールデン基準(同上)
+    - requirements.txt                     # プロセス側の依存台帳
+{% if stack == 'flutter' %}
+    - pubspec.yaml                         # アプリ本体の依存台帳
+{% elif stack == 'node' %}
+    - package.json
+{% elif stack == 'python' %}
+    - pyproject.toml
+{% endif %}
+  # project.yaml はパス単位で保護しない(gates への行追加・stack の調整は提案可)。
+  # 節単位で、エージェントが自分を縛る設定を緩められないようにする。
+  keys: [oracle, protected]
+
 # make guard / pre-commit / CI guardrails が同一列を実行する。
 # argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、
 # そこに書かれた文字列をシェルに解釈させない。複雑な処理は scripts/*.py へ置く。
@@ -61,6 +85,8 @@ stack:
 gates:
   - id: req-links
     argv: [python, scripts/check_req_links.py]
+  - id: protected
+    argv: [python, scripts/check_protected_paths.py]
   - id: oracle
     argv: [python, scripts/validate_oracle.py, --dry-run]
     cutover:                               # T-003 が done になったら自動で --gate へ切り替える

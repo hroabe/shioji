@@ -57,7 +57,7 @@ SSoT: `docs/spec/{{ spec_slug }}_SPEC_v*.md`(インセプション後に人間�
 7. 本モードでも §2 絶対規範・§5 人間ゲート・§6 禁止事項は一切緩和されない。
 8. **可逆判断は記録して進む**: 実装詳細のうち可逆な判断(命名・ファイル配置・内部構造・テストデータ値・軽微なリファクタ等)は問い合わせず決定し、docs/L3/DECISIONS.md に1行記録して続行する。**不可逆または外部に波及する判断**(公開名・課金・データ削除・スキーマ破壊的変更・仕様からの逸脱)は ISSUE+blocked。
 9. **試行予算(沼防止)**: 同一タスクで同種の失敗が3回続いたら沼と判定し、再現手順付きISSUE→blocked→次タスクへ。無限リトライを禁ずる。
-10. **ゴールデン初回基準**(採用時): 基準画像が存在しないテストの初回生成は自律で行ってよい(コミットに `golden-baseline` を明記し、CHECKPOINTの人間確認対象に列挙)。既存基準の変更のみ §5 の人間ゲート。
+10. **ゴールデン基準は生成しない**(採用時): 初回生成も既存の更新も人間ゲート(§5)。検証の正解を、検証される側が作ってはならない。基準が無いテストは ISSUE 起票→blocked とし、次のタスクへ移る。参照オラクルを人間専管にしているのと同じ理由である。
 11. **main乖離チェック**: CHECKPOINT時に origin/main との乖離を確認し、コンフリクトが予見される場合はISSUEで報告する(自走中のrebase/mergeは行わない — マージ判断は人間)。
 12. **ブランチ命名**: `autopilot/<開始日>-<agent名>`(1エージェント専有の機械的担保)。
 
@@ -67,6 +67,7 @@ SSoT: `docs/spec/{{ spec_slug }}_SPEC_v*.md`(インセプション後に人間�
 |---|---|---|
 | ゲート列一括(guard) | `python scripts/run_gates.py`(= make guard = pre-commit = CI guardrails) | 全PR |
 | 設定検査 | `python scripts/check_project_config.py`(project.yaml 自体の検査。**run_gates.py の組み込み**で、gates 列には書かない) | 全PR |
+| 保護パス | `python scripts/check_protected_paths.py`(人間専管のファイル・設定節をエージェントのコミットが変更していないか) | 全PR |
 | REQ整合 | `python scripts/check_req_links.py`(廃止ID参照・未定義REQ・実装⇔テストリンク・status語彙)。対象は `requirements.active_spec` が指す1件。未設定の間は**未装備** | 全PR |
 | 精度(オラクル照合) | `python scripts/validate_oracle.py --dry-run` → **T-003 を done にすると自動で `--gate` へ切替**(§5) | 全PR |
 | 静的解析・単体 | `python scripts/run_gates.py --all`(project.yaml の stack.analyze / stack.test。ready_marker 不在時は**未装備**として報告し、緑には数えない) | 全PR |
@@ -86,7 +87,8 @@ SSoT: `docs/spec/{{ spec_slug }}_SPEC_v*.md`(インセプション後に人間�
 - 精度ゲートの `--dry-run`→`--gate` 切替、および oracle 許容誤差・合格率の確定
 - 参照オラクル(verification/reference/)の投入
 - アプリ本体の依存台帳(project.yaml の stack.app_manifest が指すファイル)への依存追加
-- ゴールデン**既存**基準画像の変更(採用時。`--update-goldens` は人間の明示指示時のみ。初回生成は §3.5-10 により自律可)
+- ゴールデン基準画像の**生成と変更**(採用時。初回生成を含む。`--update-goldens` は人間の明示指示時のみ)
+- `requirements.txt` への**新規**依存の追加(既にある依存のインストールは自律可 — §8)
 - リリースタグ・ストア/本番提出
 
 <!-- ▼INCEPTION-SLOT:S5 — プロジェクト固有の人間ゲート(法務・課金・データ署名等)を人間が追記 -->
@@ -94,7 +96,8 @@ SSoT: `docs/spec/{{ spec_slug }}_SPEC_v*.md`(インセプション後に人間�
 
 ## 6. 禁止事項(§2の運用面)
 
-- テストの skip 追加、精度閾値・ゲート条件の変更、ゴールデンの無断更新(採用時)
+- テストの skip 追加、精度閾値・ゲート条件の変更、ゴールデンの生成・無断更新(採用時)
+- `project.yaml` の `oracle` / `protected` 節の変更(自分を縛る設定を自分で緩めない)
 - **アプリ本体の依存台帳(stack.app_manifest)への依存追加**(ISSUESで提案→人間承認後のみ)。開発ツールチェーンのPythonモジュールはこの限りではない(§8の自己修復規則に従う)
 - docs/spec/* の直接編集(提案は docs/proposals/)
 - verification/reference/ 配下の参照データの生成・改変(投入は人間ゲート)
@@ -121,6 +124,6 @@ verification/
 - 作成・有効化 — Linux/WSL/macOS: `python3 -m venv .venv && source .venv/bin/activate` / Windowsネイティブ: `python -m venv .venv` → `.venv\Scripts\activate`
 - `.venv/` はコミットしない。CIランナーは隔離環境のためvenv不要(CIは `pip install -r requirements.txt` を使用)。
 
-**ツールチェーン依存のSSoTと自己修復(必須挙動)**: Python側の依存は `requirements.txt` が唯一の台帳。**venv不在・モジュール不足(ModuleNotFoundError等)は停止事由ではなく自己修復対象** — エージェントは自律的に (a) venvを作成し (b) `python -m pip install -r requirements.txt` を実行して復旧し、作業を続行する。新たなモジュールが必要になった場合は、requirements.txt に理由コメント付きで追記→インストール→当該タスクと同一コミットに含める。禁止: venv外へのインストール、requirements.txt を経由しない追加。※アプリ本体(stack.app_manifest)の依存は人間ゲート(§6)。
+**ツールチェーン依存のSSoTと自己修復(必須挙動)**: Python側の依存は `requirements.txt` が唯一の台帳。**venv不在・モジュール不足(ModuleNotFoundError等)は停止事由ではなく自己修復対象** — エージェントは自律的に (a) venvを作成し (b) `python -m pip install -r requirements.txt` を実行して復旧し、作業を続行する。**自律してよいのは、既に requirements.txt にある依存のインストールまで**。新たなモジュールが必要になった場合は追記せず、理由を添えて ISSUE 起票→blocked とし、次のタスクへ移る(§5の人間ゲート)。台帳への追記は供給網の入口であり、綴り違いの取り違え(typosquatting)や不要な依存の混入をエージェントの判断で通さない。禁止: venv外へのインストール、requirements.txt を経由しない追加。※アプリ本体(stack.app_manifest)の依存は人間ゲート(§6)。
 
 コマンド: `make setup`(venv+依存+**pre-commitフック導入**)/ `make guard`(setupを内包 — ゲート列一括)/ `make ci`(guard+スタック検証)。pre-commitフックは guard赤のコミットを機械的に拒否する(フック本体は scripts/hooks/pre-commit、レビュー可能)。**Windowsネイティブではmakeを使わず `python scripts/run_gates.py [--all]` を直接実行**する。スタック未初期化の間、stack系は自動skipされ guard のみが有効。
