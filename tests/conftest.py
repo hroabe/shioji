@@ -56,7 +56,14 @@ BASE_CONFIG = {
     "protected": {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
-                  "verification/reference/**", "test/golden/**", "requirements.txt"],
+                  "verification/reference/**", "test/golden/**", "requirements.txt",
+                  "Makefile",
+                  "scripts/run_gates.py", "scripts/check_project_config.py",
+                  "scripts/check_lifecycle.py", "scripts/check_protected_paths.py",
+                  "scripts/check_structure.py", "scripts/check_progress.py",
+                  "scripts/check_req_links.py", "scripts/validate_oracle.py",
+                  "scripts/migrate_config.py", "scripts/hooks/pre-commit",
+                  ".github/workflows/ci.yml", "docs/process/SHIOJI_PROCESS.md"],
         "keys": ["lifecycle", "oracle", "protected", "structure", "progress"],
     },
 }

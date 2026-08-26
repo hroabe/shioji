@@ -123,3 +123,24 @@ def test_テンプレート依存はすべて固定されている():
         line = line.split("#")[0].strip()
         if line:
             assert "==" in line, f"固定されていない: {line}"
+
+
+def test_既定の保護集合がゲート本体を覆う():
+    """run_gates の BUILTIN・フック・CI・写しが protected.paths に入っている。
+
+    check_project_config.KIT_CORE との三者(テンプレート既定・KIT_CORE・BUILTIN)
+    のずれをここで検出する。
+    """
+    import re
+    template = (KIT / "template/project.yaml.jinja").read_text(encoding="utf-8")
+    core = (KIT / "template/scripts/check_project_config.py").read_text(encoding="utf-8")
+    run_gates = (KIT / "template/scripts/run_gates.py").read_text(encoding="utf-8")
+    kit_core = re.findall(r'^    "([^"]+)",$', core[core.index("KIT_CORE"):core.index("def glob_to_regex")], re.MULTILINE)
+    assert kit_core, "KIT_CORE を読めない"
+    for entry in kit_core:
+        assert f"- {entry}" in template, f"テンプレート既定に {entry} が無い"
+    for script in re.findall(r'Builtin\("[\w-]+", "([\w.]+)"', run_gates):
+        assert f"scripts/{script}" in kit_core, f"BUILTIN の {script} が KIT_CORE に無い"
+    for must in ("scripts/hooks/pre-commit", ".github/workflows/ci.yml",
+                 "docs/process/SHIOJI_PROCESS.md", "Makefile"):
+        assert must in kit_core, must
