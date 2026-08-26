@@ -155,13 +155,28 @@ Windows : manual / node / python     （flutter は重いので除外）
 必須チェックは集約ジョブ `required-checks` だけを指定しているため、matrix が
 3件から7件に増えても branch protection の設定変更は要らない。
 
+### fix(kit-ci): 実体化テストが最新タグを検証していた
+
+copier の既定 vcs ref はテンプレートの「最新タグ」である。`v0.1.0` があるため、
+kit-ci の実体化テストは作業中のブランチではなく v0.1.0 を実体化していた。
+**つまり template/ への変更は、このジョブで一度も検証されていなかった。**
+
+`CLAUDE.md` 3項が「実体化テストが精度ゲート」と定めている当のゲートが、現在の
+コードではなく過去のタグを検証していたことになる。古いテンプレートでも当時の
+検査項目がすべて通っていたため、表面化しなかった。
+
+`copier copy --vcs-ref=HEAD` を付け、生成元が HEAD であることを検査する
+ステップ(新しいスクリプトの存在と `schema_version: 2`)を足した。
+
 ### fix(hooks): Windows で make を使わないようにする
 
 `scripts/hooks/pre-commit` は `command -v make` があれば `make guard` を使うが、
 Makefile は `.venv/bin/python` を前提としており Windows では成立しない
 (CLAUDE.md §8 が「Windowsネイティブでは make を使わない」と定めている)。
 Git Bash に make がある環境で、フックが壊れた経路を選んでいた。
-`$OS`(Windows_NT)を見て、Windows では直接 python を使う。
+`$OS` を `Windows_NT` と**明示的に比べて**、Windows では直接 python を使う。
+非空かどうかで見ると、`OS` を別の値で輸出している Linux/macOS を Windows と
+誤判定し、venv 未作成のまま直接 python を呼んで依存不足で落ちる。
 
 ### その他
 
