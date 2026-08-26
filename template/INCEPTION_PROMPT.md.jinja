@@ -4,7 +4,7 @@
 以下をそのままエージェントに投入する。
 
 ---
-あなたはこのリポジトリのインセプション(仕様注入)エージェントです。CLAUDE.md と規範カタログ(同梱の docs/process/SHIOJI_PROCESS.md §6。要点は本書末尾の§Cに転載)を読んでから開始してください。
+あなたはこのリポジトリのインセプション(仕様注入)エージェントです。CLAUDE.md と規範カタログ(同梱の docs/process/SHIOJI_PROCESS.md §6 — 本書 §A の質問がこのカタログを N1〜N9 の順に問う)を読んでから開始してください。
 
 ### 原則(4つ・違反不可)
 
@@ -40,7 +40,7 @@
 | SPEC_DRAFT.md | L1仕様ドラフト(書式は docs/spec/SPEC_FORMAT.md に従う: 変更履歴/設計原則/REQ定義/検証プロトコル/未決事項/付録A REQ一覧/付録B 廃止REQ) |
 | CLAUDE_SECTIONS.md | CLAUDE.md の4スロット(S0要約/S2絶対規範/S4追加ゲート/S5人間ゲート)への転記文。スロットマーカー名を見出しにする |
 | TASK_INDEX_DRAFT.md | タスク表(TASK_INDEX.md の書式。T-001/T-002 は既存行を活かす) |
-| PROJECT_YAML_DIFF.md | project.yaml への差分(oracle節・gates追加行・deprecated_reqs)をコードブロックで |
+| PROJECT_YAML_DIFF.md | project.yaml への差分をコードブロックで。必ず含める: `requirements.active_spec`(確定する仕様書のパス)・`lifecycle.phase: development` への変更・oracle節・gates追加行・deprecated_reqs。stack=manual の場合は `stack.app_manifest` / `ready_marker` / `analyze` / `test` も |
 | ISSUES_SEED.md | 未決事項の一覧(docs/L3/ISSUES.md へ転記可能な表形式) |
 | APPLY_CHECKLIST.md | 人間の反映手順(§C参照)+ 確認観点3つ以内 |
 
@@ -52,13 +52,20 @@
 
 ## §C 人間の反映チェックリスト(APPLY_CHECKLIST.md の必須内容)
 
+順序に意味がある。`lifecycle.phase` の切替は**最後**に行う — 切り替えた瞬間から
+`check_lifecycle` は仕様(`active_spec`)とスタック設定を要求し、逆に切り替えるまで
+実装の開始(T-001 の manifest 作成)は inception として赤になる。
+
 1. SPEC_DRAFT.md をレビュー・編集し、`docs/spec/{{ spec_slug }}_SPEC_v0.1.md` として確定(status: active)
-2. CLAUDE_SECTIONS.md の各節を CLAUDE.md のスロット(S0/S2/S4/S5)へ転記
-3. PROJECT_YAML_DIFF.md を project.yaml へ反映(oracle の許容誤差・合格率は**この時点で確定=以後変更禁止**)
-4. TASK_INDEX_DRAFT.md を TASK_INDEX.md へ反映(行の確定は人間)
-5. ISSUES_SEED.md を docs/L3/ISSUES.md へ転記
-6. `make ci` 全緑を確認(check_req_links が仕様とREQ参照の整合を検査し始める)
-7. 開発開始: INITIAL_PROMPT.md §0(単発)or §1(自走)
+2. `requirements.active_spec` を確定した仕様書のパスへ向ける
+3. スタック設定を確定する(`stack.app_manifest` / `ready_marker` / `analyze` / `test`。stack=manual はここで必ず埋める)
+4. CLAUDE_SECTIONS.md の各節を CLAUDE.md のスロット(S0/S2/S4/S5)へ転記
+5. PROJECT_YAML_DIFF.md の残り(oracle節・gates追加行・deprecated_reqs)を反映(oracle の許容誤差・合格率は**この時点で確定=以後変更禁止**)
+6. TASK_INDEX_DRAFT.md を TASK_INDEX.md へ反映(行の確定は人間)
+7. ISSUES_SEED.md を docs/L3/ISSUES.md へ転記
+8. **最後に** `lifecycle.phase: development` へ変更(人間のみ — これで初めて実装を開始できる)
+9. `make ci` 全緑を確認(check_req_links と check_lifecycle が有効になった状態で)
+10. 開発開始: INITIAL_PROMPT.md §0(単発)or §1(自走)
 
 規範カタログ(N1〜N9)の一般形と強制装置の例は、同梱の `docs/process/SHIOJI_PROCESS.md` §6 を参照。
 これは生成時点のプロセス定義の写しで、生成元キットを見に行かなくても完結する。
