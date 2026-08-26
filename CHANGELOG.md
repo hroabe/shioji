@@ -209,6 +209,54 @@ Git Bash に make がある環境で、フックが壊れた経路を選んで�
 kit-ci に `scripts-unit` ジョブ（Ubuntu / Windows）を足し、`required-checks` の
 依存に加えた。`lint-scripts` の対象に `tests` も含めた。
 
+### 構造規範（N6）と構造検査を追加
+
+文書は L0-L3 で統治され、仕様と実装の対応も検査されるのに、**コードの形には規範が
+無かった**。その空白では、1000行超の単一ファイルや、import した瞬間に実行が始まる
+テスト不能なエントリポイントが、何の抵抗もなく生まれる。
+
+`PROCESS.md` に **N6 構造規範** を起こし、`scripts/check_structure.py` を追加した。
+規範の唯一の定義は `project.yaml` の `structure` 節で、散文で層やサイズを語らない。
+
+```yaml
+structure:
+  by_task: T-005
+  max_file_lines: 400
+  max_function_lines: 60          # Python のみ(AST)
+  exclude: ["**/*.g.dart", "**/*_generated.*", "**/node_modules/**", "**/.venv/**"]
+  layers: []                      # 例: [{name: ui, path: "lib/ui/**", may_import: [domain]}]
+  pure_modules: []                # import しただけで実行が始まらないこと(Python のみ)
+  pure_exempt: []                 # 枠組み上やむを得ないものを明示する
+```
+
+検査は3つ。いずれも決定論的で速い。
+
+| 検査 | 対象 | 性質 |
+|---|---|---|
+| 行数 | 全言語 | `max_file_lines` / `max_function_lines` |
+| 層の依存方向 | 全言語 | import 文に他層のディレクトリ名が現れるかを見る**発見的**検査 |
+| 純粋性 | Python | import しただけで実行が始まらないこと(AST) |
+
+- **禁止ではなく「免除を明示的に書かせる」**。`exclude` / `pure_exempt` に書かれた
+  免除は人間がレビューで見られる
+- 対象ファイルが0件のときは緑ではなく**未装備**。検査していないことと合格は別
+- 層が宣言されていないときは何もしない。発見的な検査を推測で動かさない
+- `may_import` の未知の層名は赤。綴り違いが許可として効かないようにする
+- 純粋性は**種類だけで通さない**。`print(...)` は式、`CLIENT = connect()` は代入で、
+  どちらも import した瞬間に走る。式は docstring だけを認め、代入は中の呼び出しを見る。
+  定義時に必要な呼び出しは `pure_allow_calls` に明記する（免除を書かせる）
+- import の取り出しは**順番に意味がある**。JS/TS の `import x from '...'` を先に見ないと、
+  汎用の `import 名前` が先に当たって `x` を取り出し、層をまたぐ依存が素通りする
+
+### ゲートの置き場所を「何を縛るか」で決める（PROCESS.md §5-14）
+
+エージェント自身を縛るゲート（設定検査・保護パス検査・**構造検査**）は
+`run_gates.py` の**組み込み**とし、`gates` 列に書かない。`gates` は `project.yaml`
+の中にあるため、そこに置くとその行を消すコミット自身が素通りする。
+`gates` 列に書くのは成果物を検査するゲート（REQ整合・精度）だけ。
+
+`structure` を `protected.keys` に加えた。閾値をエージェントが緩められない。
+
 ### その他
 
 - **fix(gate): 未装備と合格を分けて報告**(`緑N件 / 未装備M件`・`gate_status.json`・

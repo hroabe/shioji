@@ -29,7 +29,7 @@ BASE_CONFIG = {
     "requirements": {"prefix": "SZN", "active_spec": ""},
     "deprecated_reqs": [],
     "layers": {"src": ["src"], "test": ["tests"]},
-    "scan_ext": [".py", ".md"],
+    "scan_ext": [".py", ".md", ".ts", ".dart"],
     "l0_exempt": ["CLAUDE.md", "AGENTS.md"],
     "scan_exclude": ["docs/proposals"],
     "stack": {"by_task": "T-001", "app_manifest": "", "ready_marker": "",
@@ -41,11 +41,17 @@ BASE_CONFIG = {
          "cutover": {"argv": ["python", "scripts/validate_oracle.py", "--gate"],
                      "by_task": "T-003"}},
     ],
+    "structure": {
+        "by_task": "T-005",
+        "max_file_lines": 400, "max_function_lines": 60,
+        "exclude": ["**/*_generated.*"],
+        "layers": [], "pure_modules": [], "pure_exempt": [],
+    },
     "protected": {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
                   "verification/reference/**", "test/golden/**", "requirements.txt"],
-        "keys": ["oracle", "protected"],
+        "keys": ["oracle", "protected", "structure"],
     },
 }
 
@@ -56,6 +62,7 @@ TASK_INDEX = """# TASK_INDEX
 | T-001 | スタック初期化 | — | — | A | todo |
 | T-003 | 精度ゲートの装備 | — | — | H | todo |
 | T-004 | 保護の配線 | — | — | H | todo |
+| T-005 | 構造規範の確定 | — | — | H | todo |
 """
 
 

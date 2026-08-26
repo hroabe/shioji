@@ -131,6 +131,50 @@ def check_stack(errs: list, stack) -> None:
             errs.append(f"stack.{key}: argv のリストにする(例: [[cmd, arg], [cmd2, arg2]])")
 
 
+def check_structure(errs: list, warns: list, structure) -> None:
+    if not isinstance(structure, dict):
+        errs.append("structure: マッピングにする")
+        return
+    for key in ("max_file_lines", "max_function_lines"):
+        if key in structure:
+            num_in(errs, f"structure.{key}", structure[key], 1, None)
+    for key in ("exclude", "pure_modules", "pure_exempt", "pure_allow_calls"):
+        value = structure.get(key)
+        if value is not None and (not isinstance(value, list) or not all(
+                isinstance(x, str) for x in value)):
+            errs.append(f"structure.{key}: 文字列リストにする")
+    layers = structure.get("layers")
+    if layers is None:
+        layers = []
+    if not isinstance(layers, list):
+        errs.append("structure.layers: リストにする")
+        return
+    names = set()
+    for i, layer in enumerate(layers):
+        at = f"structure.layers[{i}]"
+        if not isinstance(layer, dict):
+            errs.append(f"{at}: マッピングにする(name / path / may_import)")
+            continue
+        name = str(layer.get("name", "")).strip()
+        if not name:
+            errs.append(f"{at}.name: 必須")
+        elif name in names:
+            errs.append(f"{at}.name: 重複している({name})")
+        names.add(name)
+        if not str(layer.get("path", "")).strip():
+            errs.append(f"{at}.path: 必須(glob)")
+    for i, layer in enumerate(layers):
+        if not isinstance(layer, dict):
+            continue
+        for target in (layer.get("may_import") or []):
+            if str(target) not in names:
+                errs.append(f"structure.layers[{i}].may_import: 未知の層 {target!r}"
+                            " — 綴りを確認する(未知の層は許可として効かない)")
+    if not any(structure.get(k) for k in
+               ("max_file_lines", "max_function_lines", "layers", "pure_modules")):
+        warns.append("structure に規範が1つも書かれていない — 構造検査は未装備のまま")
+
+
 def check_protected(errs: list, warns: list, protected) -> None:
     if not isinstance(protected, dict):
         errs.append("protected: マッピングにする(paths / keys / by_task)")
@@ -274,6 +318,8 @@ def main() -> int:
     check_gates(errs, cfg.get("gates"))
     if cfg.get("protected") is not None:
         check_protected(errs, warns, cfg["protected"])
+    if cfg.get("structure") is not None:
+        check_structure(errs, warns, cfg["structure"])
     check_stack(errs, cfg.get("stack"))
     if cfg.get("oracle") is not None:
         check_oracle(errs, warns, cfg["oracle"])
