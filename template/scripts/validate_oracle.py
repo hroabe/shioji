@@ -31,7 +31,7 @@ import csv
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # 未装備(run_gates.py が「緑」と区別して数える)
@@ -225,6 +225,23 @@ def evaluate(name: str, ref: list, pred: list, cfg: dict, quiet: bool = False) -
             "missing": len(missing), "extra": len(extra), "empty": empty, **m}
 
 
+def outside_root(raw: str, resolved: Path) -> str | None:
+    """リポジトリの外なら理由を返す。中なら None。
+
+    設定検査(check_project_config)でも同じことを見ているが、破壊的操作の
+    直前で再検査する。このスクリプトは単体でも実行され、設定検査を通った
+    ことを前提にできない(PROCESS.md §5-17 の2と同じ向きの防御)。
+    """
+    root = ROOT.resolve()
+    if PurePath(raw).is_absolute() or raw.startswith(("/", "\\")):
+        return f"絶対パス({raw})"
+    if resolved == root:
+        return f"リポジトリルートそのもの({raw})"
+    if not resolved.is_relative_to(root):
+        return f"リポジトリの外({raw} → {resolved})"
+    return None
+
+
 def regenerate(cfg: dict, pred_dir: Path, gate: bool):
     """現在のコードから予測を作り直す。成功なら None、失敗なら終了コード。
 
@@ -245,8 +262,15 @@ def regenerate(cfg: dict, pred_dir: Path, gate: bool):
     # 参照オラクルは人間専管であり、ここで消えると「同じファイルを参照とも
     # 予測とも読む」状態になって必ず緑になる。設定検査でも弾いているが、
     # 破壊的操作の直前でもう一度確かめる。
-    ref_dir = (ROOT / str(cfg.get("reference_dir", "verification/reference"))).resolve()
+    raw_pred = str(cfg.get("predictions_dir", ".verification/predictions"))
     target = pred_dir.resolve()
+    reason = outside_root(raw_pred, target)
+    if reason:
+        print(f"NG: predictions_dir が{reason}")
+        print("    再生成はこのディレクトリの *.csv を消す。リポジトリの外を"
+              "削除対象にはできない。何も削除せずに中止する")
+        return 1
+    ref_dir = (ROOT / str(cfg.get("reference_dir", "verification/reference"))).resolve()
     if target == ref_dir or target.is_relative_to(ref_dir) or ref_dir.is_relative_to(target):
         print("NG: predictions_dir が reference_dir と同じか入れ子になっている"
               f"({target} / {ref_dir})")
@@ -278,7 +302,14 @@ def run_check(gate: bool) -> int:
             return 1
         print("oracle: 未装備(インセプション N1 で project.yaml の oracle 節を確定すると有効化)")
         return UNARMED
-    ref_dir = ROOT / str(cfg.get("reference_dir", "verification/reference"))
+    # 参照の読み込みもリポジトリ内に限る。人間専管データの保護境界を、
+    # 読む側でも同じにする(外の「参照」を正典として扱わない)。
+    raw_ref = str(cfg.get("reference_dir", "verification/reference"))
+    ref_dir = ROOT / raw_ref
+    reason = outside_root(raw_ref, ref_dir.resolve())
+    if reason:
+        print(f"NG: reference_dir が{reason} — 参照オラクルはリポジトリ内に置く")
+        return 1
     pred_dir = ROOT / str(cfg.get("predictions_dir", ".verification/predictions"))
     refs = sorted(ref_dir.glob("*.csv")) if ref_dir.exists() else []
     if not refs:

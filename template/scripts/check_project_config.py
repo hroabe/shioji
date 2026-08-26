@@ -8,6 +8,7 @@ run_gates.py は safe_load して即実行するため、誤設定は重い検�
 
 ゲート列の先頭に置き、fail-fast させる。
 """
+import pathlib
 import re
 import sys
 from pathlib import Path
@@ -219,6 +220,31 @@ def check_protected(errs: list, warns: list, protected) -> None:
         errs.append("protected.by_task: 空にしない(未装備の期限)")
 
 
+def check_dir_inside(errs: list, key: str, raw: str):
+    """ディレクトリ指定がリポジトリの中に収まっているか。
+
+    予測の再生成は predictions_dir の *.csv を消してから行う。絶対パス・`..`・
+    シンボリックリンクで外を指せると、リポジトリの外のCSVを削除できてしまう。
+    pathlib は `ROOT / 絶対パス` で左辺を捨てるため、結合前に絶対パスを弾き、
+    結合後は resolve()（シンボリックリンクも辿る）でルート配下を確かめる。
+    """
+    path = pathlib.PurePath(raw)
+    if path.is_absolute() or raw.startswith(("/", "\\")):
+        errs.append(f"{key}: 絶対パスにしない({raw}) — リポジトリ外を指せる")
+        return None
+    resolved = (ROOT / raw).resolve()
+    root = ROOT.resolve()
+    if resolved == root:
+        errs.append(f"{key}: リポジトリルートそのものを指さない({raw})"
+                    " — ルート直下の *.csv が削除対象になる")
+        return None
+    if not resolved.is_relative_to(root):
+        errs.append(f"{key}: リポジトリの外を指している({raw} → {resolved})"
+                    " — 再生成が外部のCSVを削除してしまう")
+        return None
+    return resolved
+
+
 def check_oracle(errs: list, warns: list, oracle) -> None:
     if not isinstance(oracle, dict):
         errs.append("oracle: マッピングにする")
@@ -237,8 +263,9 @@ def check_oracle(errs: list, warns: list, oracle) -> None:
     # 同じファイルを参照とも予測とも読むことになり、必ず一致して緑になる。
     ref_dir, pred_dir = (str(oracle.get(k, "")).strip()
                          for k in ("reference_dir", "predictions_dir"))
-    if ref_dir and pred_dir:
-        r, p = (ROOT / ref_dir).resolve(), (ROOT / pred_dir).resolve()
+    r = check_dir_inside(errs, "oracle.reference_dir", ref_dir) if ref_dir else None
+    p = check_dir_inside(errs, "oracle.predictions_dir", pred_dir) if pred_dir else None
+    if r is not None and p is not None:
         if r == p or p.is_relative_to(r) or r.is_relative_to(p):
             errs.append("oracle.predictions_dir: reference_dir と同じ・入れ子にしない"
                         f"({pred_dir} / {ref_dir}) — 予測の再生成が参照オラクルを消し、"

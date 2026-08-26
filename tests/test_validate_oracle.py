@@ -145,3 +145,66 @@ def test_非UTF8ロケールでも落ちない(project, encoding):
                     env={"PYTHONIOENCODING": encoding, "PYTHONUTF8": "0"})
     assert r.returncode == 0
     assert "Traceback" not in out(r)
+
+
+# --- 削除先の封じ込め（v0.2.2 §2: 設定検査を迂回しても消させない） ---------
+
+def sentinel(project, rel: str = "../outside_oracle"):
+    """リポジトリ外の目印CSV。消えたら封じ込めの失敗。"""
+    outside = (project.root / rel).resolve()
+    outside.mkdir(parents=True, exist_ok=True)
+    path = outside / "keep.csv"
+    path.write_text("sentinel" + chr(10), encoding="utf-8")
+    return path
+
+
+def test_外の相対パスでは何も消さずに赤(project):
+    keep = sentinel(project)
+    setup_oracle(project, oracle={**ORACLE, "predictions_dir": "../outside_oracle"})
+    r = project.run("validate_oracle.py", "--gate")
+    assert r.returncode == 1
+    assert keep.exists(), "リポジトリ外のCSVが削除された"
+    assert "外" in out(r)
+    assert project.run("validate_oracle.py", "--dry-run").returncode == 1
+
+
+def test_絶対パスでは何も消さずに赤(project):
+    keep = sentinel(project)
+    setup_oracle(project, oracle={**ORACLE,
+                                  "predictions_dir": str(keep.parent)})
+    r = project.run("validate_oracle.py", "--gate")
+    assert r.returncode == 1
+    assert keep.exists()
+    assert "絶対パス" in out(r)
+
+
+def test_ルートそのものは削除対象にできない(project):
+    (project.root / "root_level.csv").write_text("x" + chr(10), encoding="utf-8")
+    setup_oracle(project, oracle={**ORACLE, "predictions_dir": "."})
+    r = project.run("validate_oracle.py", "--gate")
+    assert r.returncode == 1
+    assert (project.root / "root_level.csv").exists()
+
+
+def test_参照が外なら読まずに赤(project):
+    sentinel(project)
+    setup_oracle(project, oracle={**ORACLE, "reference_dir": "../outside_oracle"})
+    r = project.run("validate_oracle.py", "--gate")
+    assert r.returncode == 1
+    assert "reference_dir" in out(r)
+
+
+def test_シンボリックリンク経由でも外に出られない(project):
+    import os
+    keep = sentinel(project)
+    link = project.root / ".verification" / "predictions"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(keep.parent, link, target_is_directory=True)
+    except OSError:
+        import pytest
+        pytest.skip("シンボリックリンクを作る権限が無い(Windows既定)")
+    setup_oracle(project)          # predictions_dir は既定の .verification/predictions
+    r = project.run("validate_oracle.py", "--gate")
+    assert r.returncode == 1
+    assert keep.exists(), "リンク先(リポジトリ外)のCSVが削除された"

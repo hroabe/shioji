@@ -187,3 +187,38 @@ def test_補うものが無ければ何もしない(project):
     r = project.run("migrate_config.py", "--write")
     assert r.returncode == 0
     assert "補うものはない" in out(r)
+
+
+# --- ディレクトリの封じ込め（v0.2.2 §2） -----------------------------------
+
+def test_予測先が相対パスでリポジトリの外なら赤(project):
+    project.replace("oracle", {**ORACLE, "predictions_dir": "../outside"})
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "外" in out(r)
+
+
+def test_予測先が絶対パスなら赤(project):
+    outside = str((project.root.parent / "outside").resolve())
+    project.replace("oracle", {**ORACLE, "predictions_dir": outside})
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "絶対パス" in out(r)
+
+
+def test_予測先がルートそのものなら赤(project):
+    project.replace("oracle", {**ORACLE, "predictions_dir": "."})
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "ルート" in out(r)
+
+
+def test_参照元も外を指せない(project):
+    project.replace("oracle", {**ORACLE, "reference_dir": "../outside"})
+    assert project.run("check_project_config.py").returncode == 1
+
+
+def test_正常な予測先は通る(project):
+    for good in (".verification/predictions", "verification/predictions"):
+        project.replace("oracle", {**ORACLE, "predictions_dir": good})
+        assert project.run("check_project_config.py").returncode == 0, good
