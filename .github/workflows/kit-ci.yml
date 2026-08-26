@@ -34,13 +34,22 @@ jobs:
           out="$RUNNER_TEMP/sazanami"
           if command -v cygpath >/dev/null; then out="$(cygpath -u "$RUNNER_TEMP")/sazanami"; fi
           echo "OUT=$out" >> "$GITHUB_ENV"
+      # --vcs-ref=HEAD が要る。copier の既定はテンプレートの「最新タグ」であり、
+      # v0.1.0 があるためこれまで実体化テストは v0.1.0 を検証していた。
+      # つまり template/ への変更は、このジョブで一度も検証されていなかった。
       - name: 実体化(stack=${{ matrix.stack }})
         run: >-
-          copier copy --defaults
+          copier copy --defaults --vcs-ref=HEAD
           --data project_name=sazanami
           --data req_prefix=SZN
           --data stack=${{ matrix.stack }}
           . "$OUT"
+      - name: 生成元が HEAD であることの確認
+        run: |
+          cd "$OUT"
+          test -f scripts/check_project_config.py
+          test -f scripts/check_protected_paths.py
+          grep -q "^schema_version: 2$" project.yaml
       - name: 生成直後に全ゲート緑(0日目から緑)
         run: |
           cd "$OUT"
