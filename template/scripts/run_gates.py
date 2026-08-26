@@ -21,13 +21,11 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # ゲートが「未装備」を自己申告する終了コード
 STATUS_PATH = ROOT / "verification" / "gate_status.json"
-CONFIG_CHECK = ROOT / "scripts" / "check_project_config.py"
-PROTECTED_CHECK = ROOT / "scripts" / "check_protected_paths.py"
-STRUCTURE_CHECK = ROOT / "scripts" / "check_structure.py"
 TASK_INDEX = ROOT / "TASK_INDEX.md"
 
 # 表の行: | T-001 | タスク | REQ | 依存 | 担当 | status |
@@ -150,6 +148,43 @@ def report(results: list, strict: bool) -> int:
     return 0
 
 
+class Builtin(NamedTuple):
+    """gates 列に依存しないゲート。
+
+    エージェント自身を縛るゲートは、エージェントが編集できる場所に置かない
+    (PROCESS.md §5-14)。gates は project.yaml の中にあるため、そこに置くと
+    その行を消すコミット自身が素通りする。
+
+    section は未装備の期限(by_task)を読む節。空なら期限なし。
+    """
+    id: str
+    script: str
+    section: str
+
+
+BUILTIN = (
+    Builtin("config", "check_project_config.py", ""),        # 設定そのものの検査
+    Builtin("protected", "check_protected_paths.py", "protected"),
+    Builtin("structure", "check_structure.py", "structure"),
+    Builtin("progress", "check_progress.py", "progress"),    # 実機確認の痕跡
+)
+
+
+def run_builtin(cfg: dict, results: list) -> None:
+    for gate in BUILTIN:
+        path = ROOT / "scripts" / gate.script
+        if not path.exists():
+            sys.exit(f"NG: scripts/{gate.script} が無い({gate.id} は必須)")
+        by_task = (cfg.get(gate.section) or {}).get("by_task") if gate.section else None
+        if run(gate.id, ["python", f"scripts/{gate.script}"]):
+            results.append({"id": gate.id, "state": "pass",
+                            "note": "組み込み(gates 列に依存しない)"})
+        else:
+            check_deadline(gate.id, by_task)
+            results.append({"id": gate.id, "state": "unarmed",
+                            "note": f"期限 {by_task}" if by_task else "期限なし"})
+
+
 def main() -> int:
     utf8_io()
     argv = sys.argv[1:]
@@ -157,46 +192,11 @@ def main() -> int:
     cfg = load_config()
     results: list = []
 
-    # 設定検査は gates 列に依存させない。
-    # gates 自体が project.yaml の中にあるため、「設定を検査するゲート」を
-    # 設定から消す・改名する・壊れたゲートの後ろへ移す、のどれでも強制が外れる。
-    # 自分を検査する仕組みを、自分が編集できる場所に置かない。
-    if not CONFIG_CHECK.exists():
-        sys.exit("NG: scripts/check_project_config.py が無い(設定検査は必須)")
-    run("config", ["python", CONFIG_CHECK.relative_to(ROOT).as_posix()])
-    results.append({"id": "config", "state": "pass",
-                    "note": "組み込み(gates 列に依存しない)"})
-
-    # 保護パス検査も同じ理由で組み込みにする。gates 列に置くと、その行を消す
-    # コミット自身が検査を素通りし、同じコミットで保護パスを書き換えられる。
-    if not PROTECTED_CHECK.exists():
-        sys.exit("NG: scripts/check_protected_paths.py が無い(保護パス検査は必須)")
-    by_task = (cfg.get("protected") or {}).get("by_task")
-    if run("protected", ["python", PROTECTED_CHECK.relative_to(ROOT).as_posix()]):
-        results.append({"id": "protected", "state": "pass",
-                        "note": "組み込み(gates 列に依存しない)"})
-    else:
-        check_deadline("protected", by_task)
-        results.append({"id": "protected", "state": "unarmed",
-                        "note": f"期限 {by_task}" if by_task else "期限なし"})
-
-    # 構造検査も同じ理由で組み込みにする。閾値は protected.keys が守る。
-    if not STRUCTURE_CHECK.exists():
-        sys.exit("NG: scripts/check_structure.py が無い(構造検査は必須)")
-    by_task = (cfg.get("structure") or {}).get("by_task")
-    if run("structure", ["python", STRUCTURE_CHECK.relative_to(ROOT).as_posix()]):
-        results.append({"id": "structure", "state": "pass",
-                        "note": "組み込み(gates 列に依存しない)"})
-    else:
-        check_deadline("structure", by_task)
-        results.append({"id": "structure", "state": "unarmed",
-                        "note": f"期限 {by_task}" if by_task else "期限なし"})
+    run_builtin(cfg, results)
 
     for gate in cfg.get("gates") or []:
         label = str(gate.get("id", "?"))
-        builtin = ("check_project_config.py", "check_protected_paths.py",
-                   "check_structure.py")
-        if any(b in str(a) for a in (gate.get("argv") or []) for b in builtin):
+        if any(b.script in str(a) for a in (gate.get("argv") or []) for b in BUILTIN):
             continue                      # 組み込みで実行済み
         if not gate.get("argv"):
             sys.exit(f"NG: ゲート '{label}' に argv がない。"

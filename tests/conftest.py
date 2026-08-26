@@ -41,6 +41,11 @@ BASE_CONFIG = {
          "cutover": {"argv": ["python", "scripts/validate_oracle.py", "--gate"],
                      "by_task": "T-003"}},
     ],
+    "progress": {
+        "by_task": "T-004",
+        "file": "docs/L3/PROGRESS.md", "task_index": "TASK_INDEX.md",
+        "marker": "確認:", "exempt": [],
+    },
     "structure": {
         "by_task": "T-005",
         "max_file_lines": 400, "max_function_lines": 60,
@@ -51,7 +56,7 @@ BASE_CONFIG = {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
                   "verification/reference/**", "test/golden/**", "requirements.txt"],
-        "keys": ["oracle", "protected", "structure"],
+        "keys": ["oracle", "protected", "structure", "progress"],
     },
 }
 

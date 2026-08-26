@@ -175,6 +175,22 @@ def check_structure(errs: list, warns: list, structure) -> None:
         warns.append("structure に規範が1つも書かれていない — 構造検査は未装備のまま")
 
 
+def check_progress(errs: list, warns: list, progress) -> None:
+    if not isinstance(progress, dict):
+        errs.append("progress: マッピングにする")
+        return
+    for key in ("file", "task_index", "marker"):
+        if key in progress and not str(progress[key]).strip():
+            errs.append(f"progress.{key}: 空にしない")
+    exempt = progress.get("exempt")
+    if exempt is not None and (not isinstance(exempt, list) or not all(
+            isinstance(x, str) for x in exempt)):
+        errs.append("progress.exempt: 文字列リストにする(タスクID)")
+    if exempt:
+        warns.append(f"progress.exempt に{len(exempt)}件ある — "
+                     "実機確認を免除した理由を DECISIONS に残すこと")
+
+
 def check_protected(errs: list, warns: list, protected) -> None:
     if not isinstance(protected, dict):
         errs.append("protected: マッピングにする(paths / keys / by_task)")
@@ -315,11 +331,21 @@ def main() -> int:
             if not isinstance(value, list) or not value:
                 errs.append(f"layers.{key}: 非空のリストにする")
 
+    # キットが要求する節。copier update は project.yaml を上書きしないため、
+    # 欠けたまま新しいスクリプトだけが入ると、増えたゲートは未装備のまま
+    # 期限も持たず、guard は永久に緑になる。
+    for name in ("protected", "structure", "progress"):
+        if cfg.get(name) is None:
+            errs.append(f"{name}: 必須の節が無い"
+                        " — python scripts/migrate_config.py --write で補える")
+
     check_gates(errs, cfg.get("gates"))
     if cfg.get("protected") is not None:
         check_protected(errs, warns, cfg["protected"])
     if cfg.get("structure") is not None:
         check_structure(errs, warns, cfg["structure"])
+    if cfg.get("progress") is not None:
+        check_progress(errs, warns, cfg["progress"])
     check_stack(errs, cfg.get("stack"))
     if cfg.get("oracle") is not None:
         check_oracle(errs, warns, cfg["oracle"])
