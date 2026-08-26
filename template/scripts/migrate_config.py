@@ -98,7 +98,7 @@ def migrate(cfg: dict, notes: list) -> dict:
     # 設定検査は run_gates.py の組み込みになったので gates 列には入れない。
     # v1 で明示的に置かれていた場合は取り除く(二重実行を避ける)。
     builtin = ("check_project_config.py", "check_protected_paths.py",
-               "check_structure.py")
+               "check_structure.py", "check_progress.py")
     gates = [g for g in gates
              if not any(b in str(a) for a in (g.get("argv") or []) for b in builtin)]
     out["gates"] = gates

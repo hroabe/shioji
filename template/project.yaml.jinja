@@ -74,7 +74,7 @@ protected:
 {% endif %}
   # project.yaml はパス単位で保護しない(gates への行追加・stack の調整は提案可)。
   # 節単位で、エージェントが自分を縛る設定を緩められないようにする。
-  keys: [oracle, protected, structure]
+  keys: [oracle, protected, structure, progress]
 
 # コードの形の規範。ここが唯一の定義で、散文で層やサイズを語らない。
 # 閾値は protected.keys に入れてある。エージェントが自分を縛る値を緩められない。
@@ -92,6 +92,17 @@ structure:
   pure_modules: []                         # import しただけで実行が始まらないこと(Python のみ)
   pure_exempt: []                          # 枠組み上やむを得ないものを明示する
   pure_allow_calls: []                     # 定義時に呼んでよい関数(例: [Path, compile])
+
+# 実機確認の痕跡。ゲートには原理的に見えないものがある — 新鮮で、非空で、
+# しかし利用者に届くものとは別の対象を検証している場合である。
+# 機械で検出できないので、人間が実機を触った痕跡を要求する。
+# base..HEAD で done になったタスクだけを見る(過去を遡って責めない)。
+progress:
+  by_task: T-004                           # 保護の配線と同じく origin が要る
+  file: docs/L3/PROGRESS.md
+  task_index: TASK_INDEX.md
+  marker: "確認:"                           # この語を含む行にタスクIDがあること
+  exempt: []                               # 実機確認が要らないタスク(理由を DECISIONS へ)
 
 # make guard / pre-commit / CI guardrails が同一列を実行する。
 # argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、
