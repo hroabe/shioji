@@ -86,10 +86,9 @@ def test_ゲートは終了コード3で未装備を申告できる(project):
 
 def test_スタックコマンドの終了コード3は赤(project):
     """pytest は exit 3 を internal error に使う。規約を押し付けない。"""
-    project.write("pyproject.toml", "")
+    project.develop()
     project.write("scripts/boom.py", "import sys\nsys.exit(3)\n")
-    project.config(stack={"ready_marker": "pyproject.toml",
-                          "test": [["python", "scripts/boom.py"]]})
+    project.config(stack={"test": [["python", "scripts/boom.py"]]})
     r = project.gates("--all")
     assert r.returncode == 1
     assert "stack.test" in out(r)
@@ -118,9 +117,8 @@ def test_argvが無いゲートは赤(project):
 
 def test_実行できないコマンドは例外でなく赤(project):
     """shell=False にしたことで FileNotFoundError が素通りしていた。"""
-    project.write("pyproject.toml", "")
-    project.config(stack={"ready_marker": "pyproject.toml",
-                          "test": [["definitely-not-a-real-command-xyz"]]})
+    project.develop()
+    project.config(stack={"test": [["definitely-not-a-real-command-xyz"]]})
     r = project.gates("--all")
     assert r.returncode == 1
     text = out(r)

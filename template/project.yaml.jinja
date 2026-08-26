@@ -11,6 +11,12 @@ schema_version: 2
 
 project: "{{ project_name }}"
 
+# 段階。人間が進める。インセプションが終わったら development にする。
+#   inception    仕様を決める段階。実装が始まっていたら赤
+#   development  作る段階。仕様とスタックが決まっていなければ赤
+lifecycle:
+  phase: inception
+
 requirements:
   prefix: "{{ req_prefix }}"                 # 注記形式: REQ-{{ req_prefix }}-nnn(3桁)
   # 有効な仕様書を1つだけ明示する。glob で自動選択しない
@@ -74,7 +80,7 @@ protected:
 {% endif %}
   # project.yaml はパス単位で保護しない(gates への行追加・stack の調整は提案可)。
   # 節単位で、エージェントが自分を縛る設定を緩められないようにする。
-  keys: [oracle, protected, structure, progress]
+  keys: [lifecycle, oracle, protected, structure, progress]
 
 # コードの形の規範。ここが唯一の定義で、散文で層やサイズを語らない。
 # 閾値は protected.keys に入れてある。エージェントが自分を縛る値を緩められない。

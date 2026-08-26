@@ -32,6 +32,7 @@ CONFIG = ROOT / "project.yaml"
 # キットが要求する節の既定値。欠けていれば補う。
 # ここに無い値（層の設計など）はプロジェクトが決めるものなので空で入れる。
 REQUIRED_SECTIONS = {
+    "lifecycle": {"phase": "inception", "by_task": ""},
     "protected": {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
@@ -54,7 +55,7 @@ REQUIRED_SECTIONS = {
         "exempt": [],
     },
 }
-PROTECTED_KEYS = ("oracle", "protected", "structure", "progress")
+PROTECTED_KEYS = ("lifecycle", "oracle", "protected", "structure", "progress")
 
 
 def ensure_sections(cfg: dict, notes: list) -> dict:
@@ -67,7 +68,8 @@ def ensure_sections(cfg: dict, notes: list) -> dict:
         if name not in cfg:
             cfg[name] = dict(default)
             notes.append(f"{name} 節を既定値で補った — 中身を確認すること")
-        elif isinstance(cfg[name], dict) and not str(cfg[name].get("by_task", "")).strip():
+        elif (default.get("by_task") and isinstance(cfg[name], dict)
+              and not str(cfg[name].get("by_task", "")).strip()):
             cfg[name]["by_task"] = default["by_task"]
             notes.append(f"{name}.by_task が無いので {default['by_task']} を入れた"
                          " — TASK_INDEX の実在タスクに合わせること")
@@ -153,7 +155,7 @@ def migrate(cfg: dict, notes: list) -> dict:
     # 設定検査は run_gates.py の組み込みになったので gates 列には入れない。
     # v1 で明示的に置かれていた場合は取り除く(二重実行を避ける)。
     builtin = ("check_project_config.py", "check_protected_paths.py",
-               "check_structure.py", "check_progress.py")
+               "check_structure.py", "check_progress.py", "check_lifecycle.py")
     gates = [g for g in gates
              if not any(b in str(a) for a in (g.get("argv") or []) for b in builtin)]
     out["gates"] = gates

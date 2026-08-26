@@ -26,6 +26,7 @@ UNARMED = 3
 BASE_CONFIG = {
     "schema_version": 2,
     "project": "sazanami",
+    "lifecycle": {"phase": "inception"},
     "requirements": {"prefix": "SZN", "active_spec": ""},
     "deprecated_reqs": [],
     "layers": {"src": ["src"], "test": ["tests"]},
@@ -56,7 +57,7 @@ BASE_CONFIG = {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
                   "verification/reference/**", "test/golden/**", "requirements.txt"],
-        "keys": ["oracle", "protected", "structure", "progress"],
+        "keys": ["lifecycle", "oracle", "protected", "structure", "progress"],
     },
 }
 
@@ -129,6 +130,19 @@ class Project:
         else:
             cfg[key] = value
         return self.config(cfg)
+
+    def develop(self, marker: str = "pyproject.toml") -> None:
+        """開発段階として成立する状態にする（仕様 + スタック + phase）。
+
+        lifecycle ゲートは inception 中の実装を赤にするため、スタック検証を
+        使うテストはここを通す必要がある。
+        """
+        self.write("docs/spec/S.md", "---" + chr(10) + "status: active"
+                   + chr(10) + "---" + chr(10))
+        self.write(marker, "")
+        self.config(requirements={"active_spec": "docs/spec/S.md"},
+                    stack={"ready_marker": marker},
+                    lifecycle={"phase": "development"})
 
     def task(self, task_id: str, status: str) -> None:
         path = self.root / "TASK_INDEX.md"
