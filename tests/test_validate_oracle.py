@@ -208,3 +208,32 @@ def test_シンボリックリンク経由でも外に出られない(project):
     r = project.run("validate_oracle.py", "--gate")
     assert r.returncode == 1
     assert keep.exists(), "リンク先(リポジトリ外)のCSVが削除された"
+
+
+# --- ordered照合の全体最適（v0.2.2 目標5） ---------------------------------
+
+def test_貪欲が取りこぼす系列でも全対応を見つける(project):
+    """旧実装(貪欲+1手先読み)は先読みで p0 を extra へ送り、1対応で終わった。"""
+    NL = chr(10)
+    ref = "kind,t,h" + NL + "H,0,10" + NL + "H,2,10" + NL
+    pred = "kind,t,h" + NL + "H,-1,10" + NL + "H,0,10" + NL
+    project.write("verification/reference/seq.csv", ref)
+    gen = (
+        "import pathlib" + NL
+        + "OUT = pathlib.Path(__file__).resolve().parent.parent"
+          " / '.verification' / 'predictions'" + NL
+        + "OUT.mkdir(parents=True, exist_ok=True)" + NL
+        + f"(OUT / 'seq.csv').write_text({pred!r}, encoding='utf-8')" + NL
+    )
+    project.write("scripts/gen.py", gen)
+    project.replace("oracle", {
+        "generate": ["python", "scripts/gen.py"],
+        "reference_dir": "verification/reference",
+        "predictions_dir": ".verification/predictions",
+        "match": "ordered", "group_by": ["kind"], "order_by": "t",
+        "order_tolerance": 2, "order_window": 2, "values": {"h": 100.0},
+        "metrics": {"recall_min": 1.0, "precision_min": 1.0},
+    })
+    r = project.run("validate_oracle.py", "--gate")
+    assert r.returncode == 0, out(r)
+    assert "recall 100.0%" in out(r)
