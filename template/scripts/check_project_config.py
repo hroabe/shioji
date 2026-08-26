@@ -131,6 +131,24 @@ def check_stack(errs: list, stack) -> None:
             errs.append(f"stack.{key}: argv のリストにする(例: [[cmd, arg], [cmd2, arg2]])")
 
 
+def check_protected(errs: list, warns: list, protected) -> None:
+    if not isinstance(protected, dict):
+        errs.append("protected: マッピングにする(paths / keys / by_task)")
+        return
+    paths = protected.get("paths")
+    if paths in (None, []):
+        warns.append("protected.paths が空 — 人間専管のファイルが機械的に守られない")
+    elif not isinstance(paths, list) or not all(
+            isinstance(x, str) and x.strip() for x in paths):
+        errs.append("protected.paths: 非空の文字列リストにする")
+    keys = protected.get("keys")
+    if keys is not None and (not isinstance(keys, list) or not all(
+            isinstance(x, str) for x in keys)):
+        errs.append("protected.keys: 文字列リストにする(project.yaml の節名)")
+    if "by_task" in protected and not str(protected["by_task"]).strip():
+        errs.append("protected.by_task: 空にしない(未装備の期限)")
+
+
 def check_oracle(errs: list, warns: list, oracle) -> None:
     if not isinstance(oracle, dict):
         errs.append("oracle: マッピングにする")
@@ -254,6 +272,8 @@ def main() -> int:
                 errs.append(f"layers.{key}: 非空のリストにする")
 
     check_gates(errs, cfg.get("gates"))
+    if cfg.get("protected") is not None:
+        check_protected(errs, warns, cfg["protected"])
     check_stack(errs, cfg.get("stack"))
     if cfg.get("oracle") is not None:
         check_oracle(errs, warns, cfg["oracle"])

@@ -85,6 +85,52 @@ oracle:
   precision が無制限になるため設定検査が警告する。
 - `oracle.values` 未設定のときは値を比較していない旨を出力に明示する。
 
+### 破壊的変更 — ゴールデン基準の初回生成を人間ゲートへ（同上・0.2.0）
+
+`CLAUDE.md` §3.5-10 の「基準画像が存在しないテストの初回生成は自律で行ってよい」を
+撤回した。**検証の正解を、検証される側が作ってはならない。** 参照オラクルを人間専管に
+しているのと同じ理由である。基準が無いテストは ISSUE 起票→blocked とし、次のタスクへ移る。
+
+自走中のエージェントの挙動が変わる。ゴールデンを採用しているプロジェクトは、
+基準画像の初回投入を人間の作業として計画すること。
+
+### 保護パス検査を追加
+
+`scripts/check_protected_paths.py` を追加し、`project.yaml` に `protected` 節を置いた。
+
+```yaml
+protected:
+  by_task: T-004
+  paths: [CLAUDE.md, AGENTS.md, "docs/spec/**", "verification/reference/**",
+          "test/golden/**", requirements.txt, <app_manifest>]
+  keys: [oracle, protected]     # project.yaml の中で人間専管の節
+```
+
+- エージェントのコミット(`Agent:` トレーラ)が保護パスを変更していたら赤にする
+- `project.yaml` はパス単位で保護しない(gates への行追加・stack の調整は提案可)。
+  代わりに `keys` で節単位に保護する。**エージェントが自分を縛る設定を緩められない**
+- **これは早期検出であって強制ではない。** トレーラを書かなければ回避できる。
+  強制は GitHub の CODEOWNERS + 必須レビューが担う。T-004 を新設した
+- CODEOWNERS は同梱しない。GitHub は解決できない owner を黙って無視するため、
+  プレースホルダ入りで配ると「設定済みに見えて効いていない」状態を作ることになる
+- 保護パス検査は `run_gates.py` の**組み込み**。`gates` 列には書かない
+  (その行を消すコミット自身が素通りしてしまうため。設定検査と同じ理由)
+- **保護方針は base の版から読む。** 現在の `project.yaml` から読むと、方針を
+  弱めるコミット自身が弱めたあとの方針で検査され、緑になってしまう
+- 保護節の変更はコミットとその親を比べる。base から最終形をまとめて比べると、
+  人間の変更をエージェントの違反として数えてしまう
+- `protected.by_task` の期限を `run_gates.py` が見る
+- 生成CIの `guardrails` に `fetch-depth: 0` を追加(浅いクローンでは比較元を解決できない)。
+  push では `github.event.before` を `PROTECTED_BASE` として渡す
+  (push では checkout が origin の既定ブランチ参照を HEAD へ進めるため、
+  そのままだと `base..HEAD` が空になり何も検査されない)
+
+### 破壊的変更 — requirements.txt への新規依存追加を人間ゲートへ（同上・0.2.0）
+
+`CLAUDE.md` §8 の自己修復は「既に requirements.txt にある依存のインストール」までとした。
+新しいモジュールが必要になったら追記せず、ISSUE 起票→blocked とする。台帳への追記は
+供給網の入口であり、綴り違いの取り違え(typosquatting)をエージェントの判断で通さない。
+
 ### その他
 
 - **fix(gate): 未装備と合格を分けて報告**(`緑N件 / 未装備M件`・`gate_status.json`・

@@ -12,7 +12,7 @@ v1 -> v2 の差分:
   gates[].cutover.cmd -> gates[].cutover.argv
   stack.analyze/test  -> argv のリスト
   (追加) schema_version: 2 / stack.by_task
-  (除去) gates 内の設定検査 — run_gates.py の組み込みになったため
+  (除去) gates 内の設定検査・保護パス検査 — run_gates.py の組み込みになったため
 
   引数なし : 変換結果を標準出力に出す(ファイルは変更しない)
   --write  : project.yaml を上書きする
@@ -97,8 +97,9 @@ def migrate(cfg: dict, notes: list) -> dict:
         gates.append(g)
     # 設定検査は run_gates.py の組み込みになったので gates 列には入れない。
     # v1 で明示的に置かれていた場合は取り除く(二重実行を避ける)。
+    builtin = ("check_project_config.py", "check_protected_paths.py")
     gates = [g for g in gates
-             if not any("check_project_config.py" in str(a) for a in (g.get("argv") or []))]
+             if not any(b in str(a) for a in (g.get("argv") or []) for b in builtin)]
     out["gates"] = gates
     return out
 

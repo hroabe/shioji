@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # ゲートが「未装備」を自己申告する終了コード
 STATUS_PATH = ROOT / "verification" / "gate_status.json"
 CONFIG_CHECK = ROOT / "scripts" / "check_project_config.py"
+PROTECTED_CHECK = ROOT / "scripts" / "check_protected_paths.py"
 TASK_INDEX = ROOT / "TASK_INDEX.md"
 
 # 表の行: | T-001 | タスク | REQ | 依存 | 担当 | status |
@@ -165,9 +166,23 @@ def main() -> int:
     results.append({"id": "config", "state": "pass",
                     "note": "組み込み(gates 列に依存しない)"})
 
+    # 保護パス検査も同じ理由で組み込みにする。gates 列に置くと、その行を消す
+    # コミット自身が検査を素通りし、同じコミットで保護パスを書き換えられる。
+    if not PROTECTED_CHECK.exists():
+        sys.exit("NG: scripts/check_protected_paths.py が無い(保護パス検査は必須)")
+    by_task = (cfg.get("protected") or {}).get("by_task")
+    if run("protected", ["python", PROTECTED_CHECK.relative_to(ROOT).as_posix()]):
+        results.append({"id": "protected", "state": "pass",
+                        "note": "組み込み(gates 列に依存しない)"})
+    else:
+        check_deadline("protected", by_task)
+        results.append({"id": "protected", "state": "unarmed",
+                        "note": f"期限 {by_task}" if by_task else "期限なし"})
+
     for gate in cfg.get("gates") or []:
         label = str(gate.get("id", "?"))
-        if any("check_project_config.py" in str(a) for a in (gate.get("argv") or [])):
+        builtin = ("check_project_config.py", "check_protected_paths.py")
+        if any(b in str(a) for a in (gate.get("argv") or []) for b in builtin):
             continue                      # 組み込みで実行済み
         if not gate.get("argv"):
             sys.exit(f"NG: ゲート '{label}' に argv がない。"
