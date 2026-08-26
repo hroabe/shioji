@@ -159,3 +159,27 @@ def test_既定の保護集合がゲート本体を覆う():
     for must in ("scripts/hooks/pre-commit", ".github/workflows/ci.yml",
                  "docs/process/SHIOJI_PROCESS.md", "Makefile"):
         assert must in kit_core, must
+
+
+def test_最新タグの版がCHANGELOGに見出しを持つ():
+    """「タグ済みなのに未リリース」を v0.2.0 / v0.2.1 で2回やった。機械で見る。"""
+    import subprocess
+    import pytest
+    proc = subprocess.run(["git", "tag", "--list", "v*", "--sort=-v:refname"],
+                          cwd=KIT, capture_output=True, text=True, encoding="utf-8")
+    tags = [t for t in (proc.stdout or "").split() if t]
+    if proc.returncode != 0 or not tags:
+        pytest.skip("タグを取得できない(浅いcloneなど)")
+    latest = tags[0]
+    changelog = (KIT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f"## [{latest[1:]}]" in changelog, (
+        f"タグ {latest} があるのに CHANGELOG に ## [{latest[1:]}] が無い"
+        " — タグ済みの内容を「未リリース」の下に置いたままにしない")
+
+
+def test_ゴールデンREADMEが同梱されている():
+    """CLAUDE.md が test/golden/README.md を参照する。宙に浮かせない。"""
+    readme = KIT / "template/test/golden/README.md"
+    assert readme.exists()
+    text = readme.read_text(encoding="utf-8")
+    assert "人間ゲート" in text and "blocked" in text
