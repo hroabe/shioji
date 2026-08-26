@@ -5,7 +5,13 @@
 PYTHONUTF8=1
 export PYTHONUTF8
 run_guard() {
-  if command -v make >/dev/null 2>&1; then
+  # Windows では make を使わない。Makefile は .venv/bin/python を前提にしており
+  # (CLAUDE.md §8 が「Windowsネイティブでは make を使わない」と定めている)、
+  # Git Bash に make があると壊れた経路を選んでしまう。
+  # Windows_NT と明示的に比べる。非空かどうかで見ると、OS を別の値で
+  # 輸出している Linux/macOS を Windows と誤判定し、venv 未作成のまま
+  # 直接 python を呼んで pyyaml 不足で落ちる。
+  if [ "$OS" != "Windows_NT" ] && command -v make >/dev/null 2>&1; then
     make guard
   else
     PYBIN=python

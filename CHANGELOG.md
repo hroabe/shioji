@@ -131,6 +131,53 @@ protected:
 新しいモジュールが必要になったら追記せず、ISSUE 起票→blocked とする。台帳への追記は
 供給網の入口であり、綴り違いの取り違え(typosquatting)をエージェントの判断で通さない。
 
+### kit-ci に Windows と Node を追加
+
+テンプレートは Windows ネイティブ対応を明記しているのに、CI は Linux だけだった。
+実際、日本語出力が非UTF-8ロケールで UnicodeEncodeError になる不具合を2回出している
+(いずれも Linux では出ない)。copier は node をサポートしているのに、node の実体化は
+一度も検証されていなかった。
+
+```
+Ubuntu  : manual / flutter / node / python
+Windows : manual / node / python     （flutter は重いので除外）
+```
+
+- 手順をOSで分岐させないため、全ステップを `shell: bash` に揃えた
+- 出力先は `$RUNNER_TEMP` を `cygpath` で正規化して使う
+- **汎用スクリプトを単体でも実行する**。`run_gates.py` 経由なら子プロセスに
+  UTF-8 が渡るが、CLAUDE.md §4 は単体実行も案内している。Windows ではこの経路
+  だけが落ちていた
+- **pre-commit フックを実行する**。Windows 分岐(`.venv/Scripts/python.exe`)を
+  持ちながら一度も実行されていなかった
+- `fail-fast: false`。片方のOSで落ちても他方の結果を捨てない
+
+必須チェックは集約ジョブ `required-checks` だけを指定しているため、matrix が
+3件から7件に増えても branch protection の設定変更は要らない。
+
+### fix(kit-ci): 実体化テストが最新タグを検証していた
+
+copier の既定 vcs ref はテンプレートの「最新タグ」である。`v0.1.0` があるため、
+kit-ci の実体化テストは作業中のブランチではなく v0.1.0 を実体化していた。
+**つまり template/ への変更は、このジョブで一度も検証されていなかった。**
+
+`CLAUDE.md` 3項が「実体化テストが精度ゲート」と定めている当のゲートが、現在の
+コードではなく過去のタグを検証していたことになる。古いテンプレートでも当時の
+検査項目がすべて通っていたため、表面化しなかった。
+
+`copier copy --vcs-ref=HEAD` を付け、生成元が HEAD であることを検査する
+ステップ(新しいスクリプトの存在と `schema_version: 2`)を足した。
+
+### fix(hooks): Windows で make を使わないようにする
+
+`scripts/hooks/pre-commit` は `command -v make` があれば `make guard` を使うが、
+Makefile は `.venv/bin/python` を前提としており Windows では成立しない
+(CLAUDE.md §8 が「Windowsネイティブでは make を使わない」と定めている)。
+Git Bash に make がある環境で、フックが壊れた経路を選んでいた。
+`$OS` を `Windows_NT` と**明示的に比べて**、Windows では直接 python を使う。
+非空かどうかで見ると、`OS` を別の値で輸出している Linux/macOS を Windows と
+誤判定し、venv 未作成のまま直接 python を呼んで依存不足で落ちる。
+
 ### その他
 
 - **fix(gate): 未装備と合格を分けて報告**(`緑N件 / 未装備M件`・`gate_status.json`・
