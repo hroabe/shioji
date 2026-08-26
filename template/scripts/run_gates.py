@@ -164,6 +164,7 @@ class Builtin(NamedTuple):
 
 BUILTIN = (
     Builtin("config", "check_project_config.py", ""),        # 設定そのものの検査
+    Builtin("lifecycle", "check_lifecycle.py", "lifecycle"),  # 段階と実体の一致
     Builtin("protected", "check_protected_paths.py", "protected"),
     Builtin("structure", "check_structure.py", "structure"),
     Builtin("progress", "check_progress.py", "progress"),    # 実機確認の痕跡

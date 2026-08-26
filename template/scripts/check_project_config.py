@@ -175,6 +175,16 @@ def check_structure(errs: list, warns: list, structure) -> None:
         warns.append("structure に規範が1つも書かれていない — 構造検査は未装備のまま")
 
 
+def check_lifecycle(errs: list, warns: list, lifecycle) -> None:
+    if not isinstance(lifecycle, dict):
+        errs.append("lifecycle: マッピングにする(phase)")
+        return
+    phase = str(lifecycle.get("phase", "")).strip()
+    if phase not in ("inception", "development"):
+        errs.append("lifecycle.phase: inception / development のいずれかにする"
+                    f"({phase!r})")
+
+
 def check_progress(errs: list, warns: list, progress) -> None:
     if not isinstance(progress, dict):
         errs.append("progress: マッピングにする")
@@ -334,7 +344,7 @@ def main() -> int:
     # キットが要求する節。copier update は project.yaml を上書きしないため、
     # 欠けたまま新しいスクリプトだけが入ると、増えたゲートは未装備のまま
     # 期限も持たず、guard は永久に緑になる。
-    for name in ("protected", "structure", "progress"):
+    for name in ("lifecycle", "protected", "structure", "progress"):
         if cfg.get(name) is None:
             errs.append(f"{name}: 必須の節が無い"
                         " — python scripts/migrate_config.py --write で補える")
@@ -346,6 +356,8 @@ def main() -> int:
         check_structure(errs, warns, cfg["structure"])
     if cfg.get("progress") is not None:
         check_progress(errs, warns, cfg["progress"])
+    if cfg.get("lifecycle") is not None:
+        check_lifecycle(errs, warns, cfg["lifecycle"])
     check_stack(errs, cfg.get("stack"))
     if cfg.get("oracle") is not None:
         check_oracle(errs, warns, cfg["oracle"])

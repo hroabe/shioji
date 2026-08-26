@@ -313,6 +313,58 @@ python scripts/run_gates.py --all      # 補われた節の中身を確認して
 | `config` / `protected` / `structure` / `progress` | **エージェント自身** |
 | `req-links` / `oracle` | 成果物(`gates` 列・設定可) |
 
+### ライフサイクル（P1-4）
+
+`lifecycle.phase` を追加し、段階と実体の食い違いを赤にする。
+
+```yaml
+lifecycle:
+  phase: inception     # inception | development
+```
+
+| 段階 | 赤にするもの |
+|---|---|
+| `inception` | 実装層にファイルがある / `stack.ready_marker` が実在する |
+| `development` | `requirements.active_spec` が空 / `stack.ready_marker` が空 |
+
+**どちらの向きにも赤がある**のが要点。片方だけだと「段階を進めない」または
+「段階だけ進める」で回避できる。`run_gates.py` の組み込みで、`lifecycle` は
+`protected.keys` が守る（段階を進めるのは人間の判断）。
+
+### 生成先を自己完結させる（P1-5）
+
+`template/docs/process/SHIOJI_PROCESS.md` に生成時点のプロセス定義を同梱した。
+`INCEPTION_PROMPT.md` が生成元キットの `PROCESS.md` を参照していたため、
+生成先だけでは規範カタログを引けなかった。
+
+写しなので二重管理になる。**原本と一致することをテストで照合する**ことで、
+ずれたら気づけるようにした（`tests/test_kit_consistency.py`）。
+
+### 自走モードの安全化（P1-6 / P1-7）
+
+- **素性の分からない変更をコミットしない**（§3.5-6.5）。自走開始前に
+  `git status --porcelain` を見て、clean なら開始、自セッションの続きなら resume、
+  **素性が分からなければ ISSUE 起票 → blocked**。WIPコミットにしてはならない。
+  人間の作業・他エージェントの作業・秘密情報・デバッグ用ファイルのいずれでも
+  ありうる。**これは検出できない paper contract である**（素性を機械的に判定する
+  手段が無い）
+- **自走ブランチ名にタスクID等を足す**（§3.5-1）。`autopilot/<日付>-<agent名>` だけ
+  では、同じ日に同じagentを複数起動すると衝突する
+
+### 再現性（P1-14）
+
+`.python-version`（`3.12`）をキットと生成先の両方に置いた。CI の pin と手元がずれない。
+
+### 新しいゲートを足すときの点検表（PROCESS.md §5-17）
+
+ゲートを足したら、**そのゲート自体が外れる経路**を4つとも塞ぐ。
+v0.2 では、この4つがそれぞれ別のPRで指摘された。
+
+1. **消せないか** — `gates` 列に置くと、その行を消すコミット自身が素通りする
+2. **弱められないか** — 判定に使う方針を可変の設定から読むと、弱めるコミット自身が弱めた方針で検査される
+3. **期限は読まれるか** — `by_task` を宣言しても、それを読むコードが無ければ何も起きない
+4. **更新経路で入るか** — `copier update` は `project.yaml` を上書きしない
+
 ### その他
 
 - **fix(gate): 未装備と合格を分けて報告**(`緑N件 / 未装備M件`・`gate_status.json`・
