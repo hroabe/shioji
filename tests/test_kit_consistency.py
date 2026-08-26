@@ -43,6 +43,24 @@ def test_pythonの版が固定されている():
         assert path.read_text(encoding="utf-8").strip() == "3.12"
 
 
+def test_セミコロン複文が無い():
+    """kit-ci の ruff(E702)と同じことを手元でも見る。
+
+    v0.1 の還流#3(validate_oracle の E702)と同じ轍を v0.2.2 の作業で
+    また踏んだ。手元に ruff が無い環境では CI を1往復するまで気づけない。
+    このコードベースにセミコロン複文の正当な用例は無いので、単純一致で足りる。
+    """
+    semi = chr(59)                # ";" を直書きすると、この検査が自分に当たる
+    for directory in ("template/scripts", "tests"):
+        for path in sorted((KIT / directory).glob("*.py")):
+            for lineno, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), 1):
+                code = line.split(chr(35))[0]
+                bad = (semi + " ") in code or code.rstrip().endswith(semi)
+                assert not bad, (
+                    f"{path.name}:{lineno}: セミコロン複文(E702) — 行を分ける")
+
+
 def test_未使用のimportが無い():
     """kit-ci の ruff(F401)と同じことを手元でも見る。
 

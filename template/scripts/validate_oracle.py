@@ -150,11 +150,15 @@ def match_ordered(ref: list, pred: list, cfg: dict):
         while i < n and j < m:
             kind = choice[i][j]
             if kind == 1:
-                pairs.append((r[i], p[j])); i += 1; j += 1
+                pairs.append((r[i], p[j]))
+                i += 1
+                j += 1
             elif kind == 2:
-                extra.append(p[j]); j += 1
+                extra.append(p[j])
+                j += 1
             else:
-                missing.append(r[i]); i += 1
+                missing.append(r[i])
+                i += 1
         missing.extend(r[i:])
         extra.extend(p[j:])
     return pairs, missing, extra
