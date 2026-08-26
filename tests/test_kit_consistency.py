@@ -79,12 +79,27 @@ def test_生成先の契約が同梱の写しを指す():
     assert not (KIT / "template/PROCESS.md").exists()
 
 
-def test_自走ブランチ名の規則が1つに揃っている():
-    """同じ文書の中で古い形式が残ると、そちらに従われる。"""
-    claude = (KIT / "template/CLAUDE.md.jinja").read_text(encoding="utf-8")
-    for line in claude.splitlines():
-        if "autopilot/<" in line:
-            assert "識別子" in line or "§3.5-1" in line, line
+def template_docs():
+    return sorted((KIT / "template").glob("*.jinja")) +            sorted((KIT / "template").glob("*.md"))
+
+
+def test_自走ブランチ名の規則が全文書で揃っている():
+    """CLAUDE だけ見ていて INITIAL_PROMPT の3箇所目を取りこぼした。
+
+    規則の原本は §3.5-1。他の文書は識別子込みの形式か、§3.5-1 への参照を持つ。
+    """
+    for path in template_docs():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "autopilot/" in line:
+                assert "識別子" in line or "§3.5-1" in line, f"{path.name}: {line}"
+
+
+def test_契約と矛盾するWIPコミット指示が残っていない():
+    """§3.5-6.5 は素性不明の変更のコミットを禁じるが、INITIAL_PROMPT が
+    「wip: としてコミット」を指示したまま残っていた。"""
+    for path in template_docs():
+        text = path.read_text(encoding="utf-8")
+        assert "wip:" not in text, f"{path.name} に WIP コミット指示が残っている"
 
 
 def test_規範番号が表と見出しで食い違わない():
@@ -111,10 +126,10 @@ def test_生成元参照の変種も残っていない():
     S2スロットに残っていた。表記ゆれごと検査する。
     """
     import re
-    for name in ("CLAUDE.md.jinja", "INCEPTION_PROMPT.md.jinja"):
-        text = (KIT / "template" / name).read_text(encoding="utf-8")
+    for path in template_docs():
+        text = path.read_text(encoding="utf-8")
         # `.` は既定で改行に一致しないので、同一行内の近接だけを見る
-        assert not re.search(r"生成元.{0,12}PROCESS\.md", text), name
+        assert not re.search(r"生成元.{0,12}PROCESS\.md", text), path.name
 
 
 def test_テンプレート依存はすべて固定されている():
