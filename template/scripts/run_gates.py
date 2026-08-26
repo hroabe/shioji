@@ -27,6 +27,7 @@ UNARMED = 3                       # ゲートが「未装備」を自己申告�
 STATUS_PATH = ROOT / "verification" / "gate_status.json"
 CONFIG_CHECK = ROOT / "scripts" / "check_project_config.py"
 PROTECTED_CHECK = ROOT / "scripts" / "check_protected_paths.py"
+STRUCTURE_CHECK = ROOT / "scripts" / "check_structure.py"
 TASK_INDEX = ROOT / "TASK_INDEX.md"
 
 # 表の行: | T-001 | タスク | REQ | 依存 | 担当 | status |
@@ -179,9 +180,22 @@ def main() -> int:
         results.append({"id": "protected", "state": "unarmed",
                         "note": f"期限 {by_task}" if by_task else "期限なし"})
 
+    # 構造検査も同じ理由で組み込みにする。閾値は protected.keys が守る。
+    if not STRUCTURE_CHECK.exists():
+        sys.exit("NG: scripts/check_structure.py が無い(構造検査は必須)")
+    by_task = (cfg.get("structure") or {}).get("by_task")
+    if run("structure", ["python", STRUCTURE_CHECK.relative_to(ROOT).as_posix()]):
+        results.append({"id": "structure", "state": "pass",
+                        "note": "組み込み(gates 列に依存しない)"})
+    else:
+        check_deadline("structure", by_task)
+        results.append({"id": "structure", "state": "unarmed",
+                        "note": f"期限 {by_task}" if by_task else "期限なし"})
+
     for gate in cfg.get("gates") or []:
         label = str(gate.get("id", "?"))
-        builtin = ("check_project_config.py", "check_protected_paths.py")
+        builtin = ("check_project_config.py", "check_protected_paths.py",
+                   "check_structure.py")
         if any(b in str(a) for a in (gate.get("argv") or []) for b in builtin):
             continue                      # 組み込みで実行済み
         if not gate.get("argv"):

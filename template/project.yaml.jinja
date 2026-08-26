@@ -74,13 +74,31 @@ protected:
 {% endif %}
   # project.yaml はパス単位で保護しない(gates への行追加・stack の調整は提案可)。
   # 節単位で、エージェントが自分を縛る設定を緩められないようにする。
-  keys: [oracle, protected]
+  keys: [oracle, protected, structure]
+
+# コードの形の規範。ここが唯一の定義で、散文で層やサイズを語らない。
+# 閾値は protected.keys に入れてある。エージェントが自分を縛る値を緩められない。
+# 空のまま残せば未装備として報告される(T-005 が期限)。
+structure:
+  by_task: T-005                           # done になったら規範の記入を要求する
+  max_file_lines: 400                      # 分割の目安。超えたら赤
+  max_function_lines: 60                   # Python のみ(AST)
+  exclude:                                 # 生成物など、規範の対象外
+    - "**/*.g.dart"
+    - "**/*_generated.*"
+    - "**/node_modules/**"
+    - "**/.venv/**"
+  layers: []                               # 例: [{name: ui, path: "lib/ui/**", may_import: [domain]}]
+  pure_modules: []                         # import しただけで実行が始まらないこと(Python のみ)
+  pure_exempt: []                          # 枠組み上やむを得ないものを明示する
 
 # make guard / pre-commit / CI guardrails が同一列を実行する。
 # argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、
 # そこに書かれた文字列をシェルに解釈させない。複雑な処理は scripts/*.py へ置く。
-# 設定検査と保護パス検査(scripts/check_project_config.py /
-# scripts/check_protected_paths.py)はここに書かない。
+# エージェント自身を縛るゲート(設定検査・保護パス検査・構造検査)は
+# ここに書かない。gates は project.yaml の中にあるため、そこに置くと
+# その行を消すコミット自身が素通りしてしまう。run_gates.py が組み込みで
+# 実行する。ここに書くのは成果物を検査するゲートだけ。
 # run_gates.py が gates 列より前に無条件で実行する。設定を検査する仕組みを、
 # 設定から消せる場所に置かないため。
 gates:
