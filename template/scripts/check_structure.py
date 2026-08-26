@@ -28,17 +28,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # 未装備(run_gates.py が「緑」と区別して数える)
 
-# import 行から対象を取り出す。言語ごとの書き方をまとめて拾う。
-IMPORT_LINE = re.compile(
-    r"""^\s*(?:from\s+(?P<from>[\w.]+)|import\s+(?P<import>[\w.]+)|"""
-    r"""(?:import|export)\s.*?from\s*['"](?P<js>[^'"]+)['"]|"""
-    r"""import\s*['"](?P<bare>[^'"]+)['"]|"""
-    r"""(?:require|use)\s*\(?\s*['"](?P<req>[^'"]+)['"])""",
-    re.VERBOSE)
+# import 行から対象を取り出す。**順番に意味がある。**
+# JS/TS の `import x from '...'` を先に見ないと、汎用の `import 名前` が先に
+# 当たって取り出す対象が 'x' になり、'../ui/page' を一度も見ないまま通る。
+IMPORT_PATTERNS = (
+    re.compile(r"""^\s*(?:import|export)\b.*?\bfrom\s*['"]([^'"]+)['"]"""),
+    re.compile(r"""^\s*import\s*['"]([^'"]+)['"]"""),
+    re.compile(r"""(?:require|use)\s*\(?\s*['"]([^'"]+)['"]"""),
+    re.compile(r"^\s*from\s+([\w.]+)\s+import\b"),
+    re.compile(r"^\s*import\s+([\w.]+)"),
+)
 
-# モジュール直下に置いてよいもの。これ以外があると import で実行が始まる。
-PURE_NODES = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef,
-              ast.ClassDef, ast.Assign, ast.AnnAssign, ast.Expr)
+# モジュール直下に置いてよい定義。式と代入は中身も見る(下の check_pure)。
+PURE_DEFS = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef,
+             ast.ClassDef)
 
 
 def use_utf8() -> None:
@@ -126,21 +129,59 @@ def check_functions(path: str, tree, limit: int, errs: list) -> None:
                         f"{end - node.lineno + 1}行 — 上限{limit}行を超えている")
 
 
-def check_pure(path: str, tree, errs: list) -> None:
-    """import しただけで実行が始まらないこと。"""
+def dotted(node) -> str:
+    """呼び出し先の名前を a.b.c の形で返す。"""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = dotted(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    return ""
+
+
+def calls_in(node) -> list:
+    return [dotted(sub.func) for sub in ast.walk(node) if isinstance(sub, ast.Call)]
+
+
+def check_pure(path: str, tree, allow: set, errs: list) -> None:
+    """import しただけで実行が始まらないこと。
+
+    定義(import / def / class)だけを無条件に認める。式と代入は中身を見る。
+    `print(...)` は式、`CLIENT = connect()` は代入であり、どちらも import した
+    瞬間に走る。種類だけで通すと、この2つが素通りする。
+
+    代入の中の呼び出しは既定で赤。`Path(__file__)` のような定義時に済ませたい
+    ものは structure.pure_allow_calls に明記する(免除を書かせる)。
+    """
     for node in tree.body:
+        if isinstance(node, PURE_DEFS):
+            continue
+        if isinstance(node, ast.Expr):
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                continue                      # docstring は実行しても何も起きない
+            errs.append(f"{path}:{node.lineno}: モジュール直下に式がある"
+                        " — import しただけで実行が始まる")
+            continue
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            value = getattr(node, "value", None)
+            if value is None:
+                continue
+            bad = [name for name in calls_in(value)
+                   if name not in allow and name.split(".")[-1] not in allow]
+            if bad:
+                errs.append(f"{path}:{node.lineno}: モジュール直下の代入が"
+                            f" {bad[0]}() を呼んでいる — import しただけで実行が始まる"
+                            "(定義時に必要なら structure.pure_allow_calls に明記する)")
+            continue
         if isinstance(node, ast.If):
             test = node.test
             # if __name__ == "__main__": は入口として認める
             if (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)
                     and test.left.id == "__name__"):
                 continue
-            errs.append(f"{path}:{node.lineno}: モジュール直下に条件分岐がある"
-                        " — import しただけで実行が始まる")
-        elif not isinstance(node, PURE_NODES):
-            errs.append(f"{path}:{node.lineno}: モジュール直下に"
-                        f"{type(node).__name__} がある"
-                        " — import しただけで実行が始まる")
+        errs.append(f"{path}:{node.lineno}: モジュール直下に"
+                    f"{type(node).__name__} がある — import しただけで実行が始まる")
 
 
 def layer_of(rel: str, layers: list) -> dict | None:
@@ -163,10 +204,14 @@ def check_layers(rel: str, text: str, layers: list, errs: list) -> None:
     marks = {str(other["name"]): str(other.get("path", "")).strip("*/").split("/")[-1]
              for other in layers}
     for lineno, line in enumerate(text.splitlines(), 1):
-        m = IMPORT_LINE.match(line)
-        if not m:
+        target = ""
+        for pattern in IMPORT_PATTERNS:
+            m = pattern.match(line) or pattern.search(line)
+            if m:
+                target = m.group(1)
+                break
+        if not target:
             continue
-        target = next((v for v in m.groupdict().values() if v), "")
         segments = set(re.split(r"[./\\]", target))
         for name, mark in marks.items():
             if name in allowed or not mark:
@@ -190,6 +235,7 @@ def main() -> int:
     layers = [dict(x) for x in (structure.get("layers") or [])]
     pure = [to_regex(p) for p in (structure.get("pure_modules") or [])]
     exempt = [to_regex(p) for p in (structure.get("pure_exempt") or [])]
+    allow = {str(x) for x in (structure.get("pure_allow_calls") or [])}
     if not any((max_file, max_func, layers, pure)):
         print("構造: 未装備(structure に規範が1つも書かれていない)")
         return UNARMED
@@ -220,7 +266,7 @@ def main() -> int:
         if max_func:
             check_functions(rel, tree, int(max_func), errs)
         if any(rx.match(rel) for rx in pure) and not any(rx.match(rel) for rx in exempt):
-            check_pure(rel, tree, errs)
+            check_pure(rel, tree, allow, errs)
 
     if errs:
         print(f"NG: 構造規範に反する箇所が{len(errs)}件", file=sys.stderr)

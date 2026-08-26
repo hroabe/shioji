@@ -138,7 +138,7 @@ def check_structure(errs: list, warns: list, structure) -> None:
     for key in ("max_file_lines", "max_function_lines"):
         if key in structure:
             num_in(errs, f"structure.{key}", structure[key], 1, None)
-    for key in ("exclude", "pure_modules", "pure_exempt"):
+    for key in ("exclude", "pure_modules", "pure_exempt", "pure_allow_calls"):
         value = structure.get(key)
         if value is not None and (not isinstance(value, list) or not all(
                 isinstance(x, str) for x in value)):

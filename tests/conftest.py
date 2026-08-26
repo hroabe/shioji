@@ -29,7 +29,7 @@ BASE_CONFIG = {
     "requirements": {"prefix": "SZN", "active_spec": ""},
     "deprecated_reqs": [],
     "layers": {"src": ["src"], "test": ["tests"]},
-    "scan_ext": [".py", ".md"],
+    "scan_ext": [".py", ".md", ".ts", ".dart"],
     "l0_exempt": ["CLAUDE.md", "AGENTS.md"],
     "scan_exclude": ["docs/proposals"],
     "stack": {"by_task": "T-001", "app_manifest": "", "ready_marker": "",

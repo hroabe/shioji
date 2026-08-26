@@ -91,6 +91,7 @@ structure:
   layers: []                               # 例: [{name: ui, path: "lib/ui/**", may_import: [domain]}]
   pure_modules: []                         # import しただけで実行が始まらないこと(Python のみ)
   pure_exempt: []                          # 枠組み上やむを得ないものを明示する
+  pure_allow_calls: []                     # 定義時に呼んでよい関数(例: [Path, compile])
 
 # make guard / pre-commit / CI guardrails が同一列を実行する。
 # argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、

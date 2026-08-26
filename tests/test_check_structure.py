@@ -203,3 +203,77 @@ def test_節ごと消せば期限も消えるが保護ゲートが見る(project
     r = project.run("check_protected_paths.py", "--base", "base")
     assert r.returncode == 1
     assert "structure" in out(r)
+
+
+# --- 純粋性: 種類だけで通さない（レビュー指摘の回帰） -----------------------
+
+NL = chr(10)   # 改行。テスト内の擬似ソースを組み立てるのに使う
+
+
+def test_トップレベルの呼び出しだけでも赤(project):
+    """print(...) は式。種類だけで通すと素通りしていた。"""
+    setup(project, PURE)
+    project.write("src/app.py", 'print("副作用")' + NL)
+    r = check(project)
+    assert r.returncode == 1
+    assert "式がある" in out(r)
+
+
+def test_代入の中の呼び出しも赤(project):
+    """CLIENT = connect() は代入。import した瞬間に接続が走る。"""
+    setup(project, PURE)
+    project.write("src/app.py", "CLIENT = connect()" + NL)
+    r = check(project)
+    assert r.returncode == 1
+    assert "connect()" in out(r)
+
+
+def test_docstringは通る(project):
+    setup(project, PURE)
+    project.write("src/app.py",
+                  '"""説明。"""' + NL + 'NAME = "x"' + NL * 3 + "def main():" + NL
+                  + "    return NAME" + NL)
+    assert check(project).returncode == 0
+
+
+def test_定義時に必要な呼び出しは明記すれば通る(project):
+    """免除を書かせる。書かれた免除は人間がレビューで見られる。"""
+    code = "from pathlib import Path" + NL + "ROOT = Path(__file__).resolve()" + NL
+    setup(project, PURE)
+    project.write("src/app.py", code)
+    assert check(project).returncode == 1
+    setup(project, {**PURE, "pure_allow_calls": ["Path", "resolve"]})
+    project.write("src/app.py", code)
+    assert check(project).returncode == 0
+
+
+# --- 層: JS の既定import（レビュー指摘の回帰） -----------------------------
+
+JS_LAYERED = {**LAYERED, "layers": [
+    {"name": "ui", "path": "src/ui/**", "may_import": []},
+    {"name": "domain", "path": "src/domain/**", "may_import": []},
+]}
+
+
+def test_JSの既定形式でも層を見る(project):
+    """import x from '...' は、汎用の `import 名前` が先に当たると素通りする。"""
+    setup(project, JS_LAYERED)
+    project.write("src/domain/calc.ts", "import page from '../ui/page';" + NL)
+    project.write("src/ui/page.ts", "export const x = 1;" + NL)
+    r = check(project)
+    assert r.returncode == 1
+    assert "domain 層が ui 層を" in out(r)
+
+
+def test_JSの名前付き形式でも層を見る(project):
+    setup(project, JS_LAYERED)
+    project.write("src/domain/calc.ts", "import { page } from '../ui/page';" + NL)
+    project.write("src/ui/page.ts", "export const x = 1;" + NL)
+    assert check(project).returncode == 1
+
+
+def test_Dartのpackage形式でも層を見る(project):
+    setup(project, JS_LAYERED)
+    project.write("src/domain/calc.ts", "import 'package:app/ui/page.dart';" + NL)
+    project.write("src/ui/page.ts", "const x = 1;" + NL)
+    assert check(project).returncode == 1
