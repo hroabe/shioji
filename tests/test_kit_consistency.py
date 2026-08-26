@@ -47,7 +47,9 @@ def test_未使用のimportが無い():
     """kit-ci の ruff(F401)と同じことを手元でも見る。
 
     ruff が入っていない環境で作業すると、CI を1往復するまで気づけない。
-    完全な代替ではないが、いちばん出やすい F401 だけは先に落とす。
+    完全な代替ではない。**スコープを区別しない**ため、同じファイルの別の関数で
+    同名を使っていると関数内の未使用importを見逃す（実際に見逃した）。
+    最終的な判定は kit-ci の ruff。ここは往復を減らすための粗い網である。
     """
     import ast
     bad = []
@@ -79,7 +81,6 @@ def test_生成先の契約が同梱の写しを指す():
 
 def test_自走ブランチ名の規則が1つに揃っている():
     """同じ文書の中で古い形式が残ると、そちらに従われる。"""
-    import re
     claude = (KIT / "template/CLAUDE.md.jinja").read_text(encoding="utf-8")
     for line in claude.splitlines():
         if "autopilot/<" in line:
