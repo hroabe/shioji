@@ -165,7 +165,10 @@ def main() -> int:
     rel = log.relative_to(ROOT).as_posix()
     human_confirmed: set = set()
     agent_confirmed: set = set()
-    for sha in (git("log", "--format=%H", "--", rel) or "").split():
+    # 確認を追加したコミットも base..HEAD に限る。履歴全体から探すと、
+    # タスクが todo だった頃の古い確認が、その後 done にした時点で再利用できる
+    # (base より前の人間確認で、今回の done が通ってしまう)。
+    for sha in (git("log", "--format=%H", f"{base}..HEAD", "--", rel) or "").split():
         after_text = git("show", f"{sha}:{rel}") or ""
         parent = git("rev-parse", "--verify", "--quiet", f"{sha}^")
         before_text = (git("show", f"{parent.strip()}:{rel}") or "") if parent else ""
