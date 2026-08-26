@@ -61,7 +61,8 @@ CLAUDE.md §3 に従い、make ci 全緑 → status=review → docs/L3/PROGRESS.
 
 ### 迷ったとき
 - 実装詳細(L1の自由度内)の**可逆な判断** → 問い合わせず決定し、DECISIONS.md に1行記録して進む(§3.5-8)。不可逆・外部波及は ISSUE+blocked。同種の失敗3回で沼判定→blocked→次へ(§3.5-9)。
-- Pythonモジュール不足 → 停止しない。requirements.txt へ理由付き追記+インストールで自己修復(§8)。
+- Pythonモジュール不足 → **既に requirements.txt にある依存**なら `python -m pip install -r requirements.txt` で自己修復し、停止しない(§8)。
+  **requirements.txt に無い新規依存が必要** → 台帳へ追記せず、ISSUE起票+当該タスクを blocked(§5・§8 — 台帳への追記は人間ゲート。綴り違いの取り違えをエージェントの判断で通さない)。
 - 規範(L1)の解釈疑義・人間ゲート・**アプリ本体依存(stack.app_manifest)追加**の必要 → ISSUE起票+当該タスクを blocked にして
   次のタスクへ。**全体を止めない。**
 - validate_oracle の不合格 → 数字・閾値・テストを調整して通すことを禁ずる(§2-1)。

@@ -212,3 +212,15 @@ def test_一度消しても人間が入れ直せば緑(project):
     project.write(LOG, entry("T-001"))
     project.commit("確認を入れ直す", human=True)
     assert check(project, "--base", "base").returncode == 0
+
+
+def test_baseより前の古い確認は再利用できない(project):
+    """タスクが todo の頃の人間確認で、あとから done にしたときに通っていた。"""
+    project.git_init()
+    project.write(LOG, entry("T-001"))
+    project.commit("まだ todo だが確認だけ書いた", human=True)
+    project.git("branch", "-f", "base", "HEAD")          # ここを比較元にする
+    project.task("T-001", "done")
+    project.commit("T-001 を完了にする")                   # 新しい確認なし
+    r = check(project, "--base", "base")
+    assert r.returncode == 1

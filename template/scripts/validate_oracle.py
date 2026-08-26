@@ -16,8 +16,8 @@ verification/predictions/(決定論ハーネスの出力)を、project.yaml の 
 照合(oracle.match):
   exact   : group_by + order_by の完全一致で対応付け、values を許容誤差で比較。
   ordered : group_by ごとに order_by(ISO8601日時または数値)で整列し、探索窓内で
-            時系列順の一対一対応(非交差)。対応数最大→|Δ|合計最小の全体最適
-            (動的計画法・決定論的)。tsukishio 実証方式の発展形。
+            時系列順の一対一対応(非交差)。許容内の対応数最大→窓内の対応数最大
+            →|Δ|合計最小の全体最適(動的計画法・決定論的)。tsukishio 実証方式の発展形。
 合否: 対応ペアが |Δorder|<=order_tolerance かつ 全values |Δ|<=許容 → その1件が合格(TP)。
       recall    = TP / 参照イベント数 (取りこぼしを見る。旧 pass_rate と同じ)
       precision = TP / 予測イベント数 (誤検出を見る。extra と許容外ペアが効く)
@@ -114,53 +114,68 @@ def match_exact(ref: list, pred: list, cfg: dict):
     return pairs, missing, extra
 
 
+MAX_DP_CELLS = 4_000_000    # 系列1組あたりの n×m の上限(choice 表 = 1バイト/セル)
+
+
 def match_ordered(ref: list, pred: list, cfg: dict):
     """group_by ごとに order で整列し、非交差の一対一対応を全体最適で選ぶ。
 
-    貪欲+1手先読みは局所最適に落ちる。実例:
-      参照 [0, 2] / 予測 [-1, 0]、窓2 — 先読みが p0(-1) を extra へ送り
-      r0-p1(0) を組むと、r1(2) の相手が残らず 1対応で終わる。
-      最適は r0-p0(Δ1)+r1-p1(Δ2) の 2対応。
-    動的計画法で「対応数最大 → |Δ|合計最小」を選ぶ。同点の分解は
-    対応 > 予測を余らせる > 参照を落とす の固定順で、結果は決定論的。
+    目的(辞書式・大きいほど良い):
+      1. order_tolerance 内の対応数(= 判定で合格しうる対応)
+      2. order_window 内の対応数
+      3. -|Δ| 合計
+    2 だけを最大化すると、窓内の遠い対応を2つ作って両方不合格にする方が、
+    近い対応を1つ作って合格させるより優先されてしまう(反例: 参照 [0,10]・
+    予測 [9,20]・窓15・許容2 — 0↔9,10↔20 の2対応より 10↔9 の1対応が正しい)。
+    同点は 対応 > extra > missing の固定順で分解し、結果は決定論的。
+
+    メモリ: choice 表は 1バイト/セル(bytearray)、best は2行だけ持つ。
+    それでも n×m が MAX_DP_CELLS を超える系列は扱わない — group_by で
+    系列を分割すること。黙って落ちるより、上限を宣言して赤にする。
     """
     window = float(cfg.get("order_window", cfg["order_tolerance"]))
+    tol = float(cfg["order_tolerance"])
     pairs, missing, extra = [], [], []
     groups = sorted({e["group"] for e in ref} | {e["group"] for e in pred})
     for g in groups:
         r = sorted((e for e in ref if e["group"] == g), key=lambda e: e["order"][1])
         p = sorted((e for e in pred if e["group"] == g), key=lambda e: e["order"][1])
         n, m = len(r), len(p)
-        # best[i][j] = r[i:], p[j:] に対する (対応数, -|Δ|合計) の最大値
-        best = [[(0, 0.0)] * (m + 1) for _ in range(n + 1)]
-        choice = [[3] * (m + 1) for _ in range(n + 1)]   # 1=対応 2=extra 3=missing
-        for i in range(n - 1, -1, -1):
-            for j in range(m - 1, -1, -1):
-                candidates = []
-                delta = abs(order_delta(p[j]["order"], r[i]["order"]))
+        if n * m > MAX_DP_CELLS:
+            sys.exit(f"ERROR: 系列 {'/'.join(g) or '-'} が大きすぎる({n}×{m}) — "
+                     f"group_by で分割する(上限 {MAX_DP_CELLS} セル)")
+        # choice[i][j]: 1=対応 2=p[j]を余らせる 3=r[i]を落とす
+        choice = [bytearray(m + 1) for _ in range(n + 1)]
+        below = [(0, 0, 0.0)] * (m + 1)          # best[i+1][*]
+        for i_r in range(n - 1, -1, -1):
+            row = [(0, 0, 0.0)] * (m + 1)         # best[i_r][*]
+            for j_p in range(m - 1, -1, -1):
+                candidates = [(row[j_p + 1], 2), (below[j_p], 3)]
+                delta = abs(order_delta(p[j_p]["order"], r[i_r]["order"]))
                 if delta <= window:
-                    matched, cost = best[i + 1][j + 1]
-                    candidates.append(((matched + 1, cost - delta), 1))
-                candidates.append((best[i][j + 1], 2))    # p[j] を余らせる
-                candidates.append((best[i + 1][j], 3))    # r[i] を落とす
-                # 同点は選択肢番号の小さい方(対応 > extra > missing)
-                value, kind = max(candidates, key=lambda c: (c[0][0], c[0][1], -c[1]))
-                best[i][j], choice[i][j] = value, kind
-        i = j = 0
-        while i < n and j < m:
-            kind = choice[i][j]
+                    tp, matched, cost = below[j_p + 1]
+                    candidates.append(((tp + (1 if delta <= tol else 0),
+                                        matched + 1, cost - delta), 1))
+                value, kind = max(candidates,
+                                  key=lambda c: (c[0][0], c[0][1], c[0][2], -c[1]))
+                row[j_p] = value
+                choice[i_r][j_p] = kind
+            below = row
+        i_r = j_p = 0
+        while i_r < n and j_p < m:
+            kind = choice[i_r][j_p]
             if kind == 1:
-                pairs.append((r[i], p[j]))
-                i += 1
-                j += 1
+                pairs.append((r[i_r], p[j_p]))
+                i_r += 1
+                j_p += 1
             elif kind == 2:
-                extra.append(p[j])
-                j += 1
+                extra.append(p[j_p])
+                j_p += 1
             else:
-                missing.append(r[i])
-                i += 1
-        missing.extend(r[i:])
-        extra.extend(p[j:])
+                missing.append(r[i_r])
+                i_r += 1
+        missing.extend(r[i_r:])
+        extra.extend(p[j_p:])
     return pairs, missing, extra
 
 
@@ -470,7 +485,15 @@ def selftest() -> int:
                  cfg_t, quiet=True)
     assert r["ok"] == 1 and r["passed"], ("Δ2 の組を選ぶと許容誤差1を超えて不合格", r)
 
-    print("selftest OK: 13ケース")
+    # 14) 窓内の対応数だけを最大化すると、遠い2対応(両方不合格)が
+    #     近い1対応(合格)に勝ってしまう。許容内の対応数を先に見る。
+    cfg_w = {**cfg_n, "order_window": 15, "order_tolerance": 2,
+             "metrics": {"recall_min": 0.5, "precision_min": 0.5}}
+    r = evaluate("t14", [evn("H", 0, 10), evn("H", 10, 10)],
+                 [evn("H", 9, 10), evn("H", 20, 10)], cfg_w, quiet=True)
+    assert r["ok"] == 1 and r["passed"], ("0↔9,10↔20 を選ぶと両方不合格になる", r)
+
+    print("selftest OK: 14ケース")
     return 0
 
 

@@ -201,3 +201,23 @@ def test_ゴールデンREADMEが同梱されている():
     assert readme.exists()
     text = readme.read_text(encoding="utf-8")
     assert "人間ゲート" in text and "blocked" in text
+
+
+def test_依存追加の指示が契約と矛盾しない():
+    """CLAUDE §8 は新規依存の追記を人間ゲートにしたのに、INITIAL_PROMPT が
+    「requirements.txt へ追記+インストール」を指示したまま残っていた。"""
+    for path in template_docs():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "requirements.txt" in line and "追記" in line:
+                assert any(word in line for word in ("せず", "禁止", "blocked", "人間ゲート")), (
+                    f"{path.name}: 台帳への追記を無条件に指示している — {line.strip()[:80]}")
+
+
+def test_ゴールデン初回生成を自律可とする記述が残っていない():
+    """原本 PROCESS.md だけが古く、生成先は直っていた。両方を見る。"""
+    import re
+    targets = [KIT / "PROCESS.md", *template_docs(),
+               KIT / "template/test/golden/README.md"]
+    for path in targets:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            assert not re.search(r"初回生成.{0,8}自律", line), f"{path.name}: {line.strip()[:80]}"
