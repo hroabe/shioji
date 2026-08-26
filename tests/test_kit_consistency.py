@@ -221,3 +221,41 @@ def test_ゴールデン初回生成を自律可とする記述が残ってい�
     for path in targets:
         for line in path.read_text(encoding="utf-8").splitlines():
             assert not re.search(r"初回生成.{0,8}自律", line), f"{path.name}: {line.strip()[:80]}"
+
+
+def test_タグの木が自分の版の見出しを含む():
+    """存在だけを見る検査の限界。v0.2.2 は v0.2.1 と同一コミットを指したまま
+    公開され、main 側に見出しがあるだけで整合テストが緑になった。
+
+    タグが指す木の CHANGELOG に、その版の見出しがあることを各タグに求める。
+    よって見出しはタグの前に確定し、それを含むコミットにタグを打つ。
+    - main の CHANGELOG でその版を「欠陥」と記録したタグは免除(動かさない方針)
+    - v0.2.2 以前は規則の導入前(未リリース表記のまま打たれた)のため対象外
+    """
+    import subprocess
+    import pytest
+
+    def git(*args):
+        proc = subprocess.run(["git", *args], cwd=KIT, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
+        return proc.stdout if proc.returncode == 0 else None
+
+    listed = git("tag", "--list", "v*")
+    if not listed or not listed.split():
+        pytest.skip("タグを取得できない(浅いcloneなど)")
+    changelog = (KIT / "CHANGELOG.md").read_text(encoding="utf-8")
+    for tag in listed.split():
+        try:
+            parts = tuple(int(x) for x in tag[1:].split("."))
+        except ValueError:
+            continue
+        if parts < (0, 2, 3):
+            continue
+        heading = f"## [{tag[1:]}]"
+        line = next((x for x in changelog.splitlines() if x.startswith(heading)), "")
+        if "欠陥" in line:
+            continue
+        tree = git("show", f"{tag}:CHANGELOG.md") or ""
+        assert heading in tree, (
+            f"タグ {tag} が指す木の CHANGELOG に {heading} が無い"
+            " — 見出しを確定したコミットにタグを打つ(順序: 見出し → タグ)")
