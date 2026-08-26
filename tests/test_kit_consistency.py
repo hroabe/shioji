@@ -41,3 +41,29 @@ def test_pythonの版が固定されている():
     for path in (KIT / ".python-version", KIT / "template/.python-version"):
         assert path.exists(), path
         assert path.read_text(encoding="utf-8").strip() == "3.12"
+
+
+def test_未使用のimportが無い():
+    """kit-ci の ruff(F401)と同じことを手元でも見る。
+
+    ruff が入っていない環境で作業すると、CI を1往復するまで気づけない。
+    完全な代替ではないが、いちばん出やすい F401 だけは先に落とす。
+    """
+    import ast
+    bad = []
+    for directory in ("template/scripts", "tests"):
+        for path in sorted((KIT / directory).glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            imported = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported[(alias.asname or alias.name).split(".")[0]] = node.lineno
+                elif isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        imported[alias.asname or alias.name] = node.lineno
+            used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+            used |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+            bad += [f"{path.name}:{line} {name}"
+                    for name, line in imported.items() if name not in used]
+    assert not bad, bad

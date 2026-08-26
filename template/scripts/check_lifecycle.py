@@ -13,7 +13,6 @@
 どちらの向きにも赤があるのが要点で、片方だけだと「段階を進めない」または
 「段階だけ進める」で回避できてしまう。
 """
-import re
 import sys
 from pathlib import Path
 
