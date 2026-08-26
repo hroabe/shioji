@@ -4,11 +4,23 @@
 name: kit-ci
 on: [push, pull_request]
 jobs:
+  # OS を跨ぐのは、テンプレートが Windows ネイティブ対応を明記しているのに
+  # CI が Linux だけだったため。実際、日本語出力が cp932 系のロケールで
+  # UnicodeEncodeError になる不具合を2回出している(いずれも Linux では出ない)。
+  # Flutter は重いので Ubuntu だけにする。
   instantiate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false # 1つのOSで落ちても、他方の結果を捨てない
       matrix:
-        stack: [manual, flutter, python]
+        os: [ubuntu-latest, windows-latest]
+        stack: [manual, flutter, node, python]
+        exclude:
+          - os: windows-latest
+            stack: flutter
+    defaults:
+      run:
+        shell: bash # Windows でも Git Bash に揃え、手順をOSで分岐させない
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,25 +29,44 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install copier pyyaml
+      - name: 出力先を決める
+        run: |
+          out="$RUNNER_TEMP/sazanami"
+          if command -v cygpath >/dev/null; then out="$(cygpath -u "$RUNNER_TEMP")/sazanami"; fi
+          echo "OUT=$out" >> "$GITHUB_ENV"
       - name: 実体化(stack=${{ matrix.stack }})
         run: >-
           copier copy --defaults
           --data project_name=sazanami
           --data req_prefix=SZN
           --data stack=${{ matrix.stack }}
-          . /tmp/sazanami
+          . "$OUT"
       - name: 生成直後に全ゲート緑(0日目から緑)
-        working-directory: /tmp/sazanami
         run: |
+          cd "$OUT"
           pip install -r requirements.txt
           python scripts/run_gates.py --all
-      - name: 汎用スクリプトの selftest
-        working-directory: /tmp/sazanami
+      - name: 汎用スクリプトを単体でも実行する
+        # run_gates.py 経由なら子プロセスに UTF-8 が渡るが、CLAUDE.md §4 は
+        # 単体実行も案内している。Windows ではこの経路だけが落ちていた。
         run: |
+          cd "$OUT"
           python scripts/validate_oracle.py --selftest
-      - name: 残留jinjaプレースホルダの検査
-        working-directory: /tmp/sazanami
+          python scripts/validate_oracle.py --dry-run || [ $? -eq 3 ]
+          python scripts/check_project_config.py
+          python scripts/check_req_links.py || [ $? -eq 3 ]
+          python scripts/check_protected_paths.py || [ $? -eq 3 ]
+      - name: pre-commit フックが動くこと
+        # フックは Windows 分岐(.venv/Scripts/python.exe)を持つのに、
+        # 一度も実行されていなかった。
         run: |
+          cd "$OUT"
+          git init -q -b main
+          git -c user.name=ci -c user.email=ci@example.com add -A
+          sh scripts/hooks/pre-commit
+      - name: 残留jinjaプレースホルダの検査
+        run: |
+          cd "$OUT"
           ! grep -rn "{{" --include="*.md" --include="*.yaml" --include="*.yml" . || (echo "未展開のプレースホルダが残存" && exit 1)
   # 還流#3: 同梱スクリプトが dirty(ruff違反)なまま出荷されると、Python-stack実体化で
   # `ruff check .` が赤になる。テンプレ同梱スクリプトを生成先と同じ規則で lint する。
