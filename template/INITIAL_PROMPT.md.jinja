@@ -29,12 +29,22 @@ CLAUDE.md §3 に従い、make ci 全緑 → status=review → docs/L3/PROGRESS.
    (POSIXでは `make guard` がこの手順を内包)。その上で `python scripts/run_gates.py` が通ることを確認。
    **venv・Pythonモジュール起因の失敗では停止しない** — CLAUDE.md §8 に従い自己修復して再試行する。
    停止して人間に返すのは、システム側ツール(スタックSDK / git / make 等のOSレベル導入)が欠ける場合のみ。
-3. TASK_INDEX / PROGRESS / ISSUES / DECISIONS を読み、現在地を5行以内で要約する。
+3. **作業ツリーの素性確認(§3.5-6.5)**: `git status --porcelain` を見る。
+   (a)clean → 続行 (b)未コミット変更が自セッションの続きだと直近コミット・PROGRESSから
+   確認できる → resume として続行 (c)**素性が分からない → 何もコミットしない**。
+   docs/L3/ISSUES.md **自体が汚れていなければ**、そのファイルだけを add して状況を
+   記帳してよい。**ISSUES.md も汚れているなら、リポジトリには一切書かず**、
+   状況をセッションの出力で人間に報告して停止する(汚れたファイルを add すれば、
+   素性不明の編集ごとコミットすることになる)。いずれの場合も自走は開始しない。
+   人間の作業・他エージェントの作業・秘密情報かもしれない変更を
+   「とりあえず退避」してはならない。
+4. TASK_INDEX / PROGRESS / ISSUES / DECISIONS を読み、現在地を5行以内で要約する。
    **孤児doingの回収**: status=doing が残っていれば直近コミット・PROGRESSと照合し、
-   (a)整合すれば続行 (b)状態不明なら未コミット変更を `wip: T-xxx 中断状態` としてコミットした上で
-   status を todo に戻し、ISSUE に状況を1件記帳してから通常の選定に入る。作業を握り潰さない。
-4. `git switch -c autopilot/$(date +%Y%m%d)-<agent名>` を切る(Windowsネイティブでは日付部を手で展開)。
-5. 作業ループへ。
+   (a)整合すれば続行 (b)対応する変更がコミット済みで状態だけ古い → status を todo に戻し、
+   ISSUE に状況を1件記帳してから通常の選定に入る。作業を握り潰さない。
+5. `git switch -c autopilot/$(date +%Y%m%d)-<agent名>-<タスクID等の識別子>` を切る
+   (形式は §3.5-1。Windowsネイティブでは日付部を手で展開)。
+6. 作業ループへ。
 
 ### 作業ループ(1タスク=1サイクル、完了まで反復)
 1. 選定: status=todo かつ依存が全て done の最小IDタスク。
@@ -68,5 +78,5 @@ CLAUDE.md §3 に従い、make ci 全緑 → status=review → docs/L3/PROGRESS.
 
 ---
 自走モード再開。CLAUDE.md(§2と§3.5)→TASK_INDEX→PROGRESS→ISSUESの順に読み、
-PROGRESS冒頭の「次の一手」から作業ループを継続してください。起動手順の環境確認も再実行すること。
+PROGRESS冒頭の「次の一手」から作業ループを継続してください。起動手順の環境確認と、作業ツリーの素性確認(§3.5-6.5 — 素性不明の未コミット変更をコミットしない)も再実行すること。
 ---

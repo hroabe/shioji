@@ -16,7 +16,8 @@ verification/predictions/(決定論ハーネスの出力)を、project.yaml の 
 照合(oracle.match):
   exact   : group_by + order_by の完全一致で対応付け、values を許容誤差で比較。
   ordered : group_by ごとに order_by(ISO8601日時または数値)で整列し、探索窓内で
-            時系列順の一対一対応(貪欲・1手先読み・再利用禁止)。tsukishio 実証方式の基本形。
+            時系列順の一対一対応(非交差)。対応数最大→|Δ|合計最小の全体最適
+            (動的計画法・決定論的)。tsukishio 実証方式の発展形。
 合否: 対応ペアが |Δorder|<=order_tolerance かつ 全values |Δ|<=許容 → その1件が合格(TP)。
       recall    = TP / 参照イベント数 (取りこぼしを見る。旧 pass_rate と同じ)
       precision = TP / 予測イベント数 (誤検出を見る。extra と許容外ペアが効く)
@@ -31,7 +32,7 @@ import csv
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # 未装備(run_gates.py が「緑」と区別して数える)
@@ -114,32 +115,50 @@ def match_exact(ref: list, pred: list, cfg: dict):
 
 
 def match_ordered(ref: list, pred: list, cfg: dict):
+    """group_by ごとに order で整列し、非交差の一対一対応を全体最適で選ぶ。
+
+    貪欲+1手先読みは局所最適に落ちる。実例:
+      参照 [0, 2] / 予測 [-1, 0]、窓2 — 先読みが p0(-1) を extra へ送り
+      r0-p1(0) を組むと、r1(2) の相手が残らず 1対応で終わる。
+      最適は r0-p0(Δ1)+r1-p1(Δ2) の 2対応。
+    動的計画法で「対応数最大 → |Δ|合計最小」を選ぶ。同点の分解は
+    対応 > 予測を余らせる > 参照を落とす の固定順で、結果は決定論的。
+    """
     window = float(cfg.get("order_window", cfg["order_tolerance"]))
     pairs, missing, extra = [], [], []
     groups = sorted({e["group"] for e in ref} | {e["group"] for e in pred})
     for g in groups:
         r = sorted((e for e in ref if e["group"] == g), key=lambda e: e["order"][1])
         p = sorted((e for e in pred if e["group"] == g), key=lambda e: e["order"][1])
+        n, m = len(r), len(p)
+        # best[i][j] = r[i:], p[j:] に対する (対応数, -|Δ|合計) の最大値
+        best = [[(0, 0.0)] * (m + 1) for _ in range(n + 1)]
+        choice = [[3] * (m + 1) for _ in range(n + 1)]   # 1=対応 2=extra 3=missing
+        for i in range(n - 1, -1, -1):
+            for j in range(m - 1, -1, -1):
+                candidates = []
+                delta = abs(order_delta(p[j]["order"], r[i]["order"]))
+                if delta <= window:
+                    matched, cost = best[i + 1][j + 1]
+                    candidates.append(((matched + 1, cost - delta), 1))
+                candidates.append((best[i][j + 1], 2))    # p[j] を余らせる
+                candidates.append((best[i + 1][j], 3))    # r[i] を落とす
+                # 同点は選択肢番号の小さい方(対応 > extra > missing)
+                value, kind = max(candidates, key=lambda c: (c[0][0], c[0][1], -c[1]))
+                best[i][j], choice[i][j] = value, kind
         i = j = 0
-        while i < len(r) and j < len(p):
-            d = order_delta(p[j]["order"], r[i]["order"])
-            if d < -window:
-                extra.append(p[j])
-                j += 1
-            elif d > window:
-                missing.append(r[i])
-                i += 1
-            else:
-                # 1手先読み: 次の予測の方が現参照に近ければ、現予測はextraへ送る(再利用禁止・非交差)
-                if j + 1 < len(p):
-                    d_next = order_delta(p[j + 1]["order"], r[i]["order"])
-                    if abs(d_next) < abs(d) and abs(d_next) <= window:
-                        extra.append(p[j])
-                        j += 1
-                        continue
+        while i < n and j < m:
+            kind = choice[i][j]
+            if kind == 1:
                 pairs.append((r[i], p[j]))
                 i += 1
                 j += 1
+            elif kind == 2:
+                extra.append(p[j])
+                j += 1
+            else:
+                missing.append(r[i])
+                i += 1
         missing.extend(r[i:])
         extra.extend(p[j:])
     return pairs, missing, extra
@@ -225,6 +244,23 @@ def evaluate(name: str, ref: list, pred: list, cfg: dict, quiet: bool = False) -
             "missing": len(missing), "extra": len(extra), "empty": empty, **m}
 
 
+def outside_root(raw: str, resolved: Path) -> str | None:
+    """リポジトリの外なら理由を返す。中なら None。
+
+    設定検査(check_project_config)でも同じことを見ているが、破壊的操作の
+    直前で再検査する。このスクリプトは単体でも実行され、設定検査を通った
+    ことを前提にできない(PROCESS.md §5-17 の2と同じ向きの防御)。
+    """
+    root = ROOT.resolve()
+    if PurePath(raw).is_absolute() or raw.startswith(("/", "\\")):
+        return f"絶対パス({raw})"
+    if resolved == root:
+        return f"リポジトリルートそのもの({raw})"
+    if not resolved.is_relative_to(root):
+        return f"リポジトリの外({raw} → {resolved})"
+    return None
+
+
 def regenerate(cfg: dict, pred_dir: Path, gate: bool):
     """現在のコードから予測を作り直す。成功なら None、失敗なら終了コード。
 
@@ -245,8 +281,15 @@ def regenerate(cfg: dict, pred_dir: Path, gate: bool):
     # 参照オラクルは人間専管であり、ここで消えると「同じファイルを参照とも
     # 予測とも読む」状態になって必ず緑になる。設定検査でも弾いているが、
     # 破壊的操作の直前でもう一度確かめる。
-    ref_dir = (ROOT / str(cfg.get("reference_dir", "verification/reference"))).resolve()
+    raw_pred = str(cfg.get("predictions_dir", ".verification/predictions"))
     target = pred_dir.resolve()
+    reason = outside_root(raw_pred, target)
+    if reason:
+        print(f"NG: predictions_dir が{reason}")
+        print("    再生成はこのディレクトリの *.csv を消す。リポジトリの外を"
+              "削除対象にはできない。何も削除せずに中止する")
+        return 1
+    ref_dir = (ROOT / str(cfg.get("reference_dir", "verification/reference"))).resolve()
     if target == ref_dir or target.is_relative_to(ref_dir) or ref_dir.is_relative_to(target):
         print("NG: predictions_dir が reference_dir と同じか入れ子になっている"
               f"({target} / {ref_dir})")
@@ -278,7 +321,14 @@ def run_check(gate: bool) -> int:
             return 1
         print("oracle: 未装備(インセプション N1 で project.yaml の oracle 節を確定すると有効化)")
         return UNARMED
-    ref_dir = ROOT / str(cfg.get("reference_dir", "verification/reference"))
+    # 参照の読み込みもリポジトリ内に限る。人間専管データの保護境界を、
+    # 読む側でも同じにする(外の「参照」を正典として扱わない)。
+    raw_ref = str(cfg.get("reference_dir", "verification/reference"))
+    ref_dir = ROOT / raw_ref
+    reason = outside_root(raw_ref, ref_dir.resolve())
+    if reason:
+        print(f"NG: reference_dir が{reason} — 参照オラクルはリポジトリ内に置く")
+        return 1
     pred_dir = ROOT / str(cfg.get("predictions_dir", ".verification/predictions"))
     refs = sorted(ref_dir.glob("*.csv")) if ref_dir.exists() else []
     if not refs:
@@ -399,7 +449,28 @@ def selftest() -> int:
                                      "f1_min": 0.9}}, quiet=True)
     assert not r["passed"] and r["f1"] < 0.9, r
 
-    print("selftest OK: 11ケース")
+    # 12) 旧実装(貪欲+1手先読み)が対応数を取りこぼした系列。
+    #     先読みが p0 を extra へ送り、r1 の相手が残らなかった。
+    def evn(kind: str, x: float, h: float) -> dict:
+        return {"group": (kind,), "order": ("n", float(x)),
+                "raw_order": str(x), "values": {"h": h}}
+
+    cfg_n = {"match": "ordered", "group_by": ["kind"], "order_by": "x",
+             "order_tolerance": 2, "order_window": 2, "values": {"h": 100.0},
+             "metrics": {"recall_min": 1.0, "precision_min": 1.0}}
+    ref_n = [evn("H", 0, 10), evn("H", 2, 10)]
+    pred_n = [evn("H", -1, 10), evn("H", 0, 10)]
+    r = evaluate("t12", ref_n, pred_n, cfg_n, quiet=True)
+    assert r["ok"] == 2 and r["passed"], ("貪欲なら1対応で不合格になる系列", r)
+
+    # 13) 対応数が同じでも |Δ| 合計が最小の組を選ぶ(許容誤差の判定が変わる)
+    cfg_t = {**cfg_n, "order_window": 3, "order_tolerance": 1,
+             "metrics": {"recall_min": 0.5, "precision_min": 0.5}}
+    r = evaluate("t13", [evn("H", 0, 10), evn("H", 3, 10)], [evn("H", 2, 10)],
+                 cfg_t, quiet=True)
+    assert r["ok"] == 1 and r["passed"], ("Δ2 の組を選ぶと許容誤差1を超えて不合格", r)
+
+    print("selftest OK: 13ケース")
     return 0
 
 

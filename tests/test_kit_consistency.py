@@ -43,6 +43,24 @@ def test_pythonの版が固定されている():
         assert path.read_text(encoding="utf-8").strip() == "3.12"
 
 
+def test_セミコロン複文が無い():
+    """kit-ci の ruff(E702)と同じことを手元でも見る。
+
+    v0.1 の還流#3(validate_oracle の E702)と同じ轍を v0.2.2 の作業で
+    また踏んだ。手元に ruff が無い環境では CI を1往復するまで気づけない。
+    このコードベースにセミコロン複文の正当な用例は無いので、単純一致で足りる。
+    """
+    semi = chr(59)                # ";" を直書きすると、この検査が自分に当たる
+    for directory in ("template/scripts", "tests"):
+        for path in sorted((KIT / directory).glob("*.py")):
+            for lineno, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), 1):
+                code = line.split(chr(35))[0]
+                bad = (semi + " ") in code or code.rstrip().endswith(semi)
+                assert not bad, (
+                    f"{path.name}:{lineno}: セミコロン複文(E702) — 行を分ける")
+
+
 def test_未使用のimportが無い():
     """kit-ci の ruff(F401)と同じことを手元でも見る。
 
@@ -79,12 +97,27 @@ def test_生成先の契約が同梱の写しを指す():
     assert not (KIT / "template/PROCESS.md").exists()
 
 
-def test_自走ブランチ名の規則が1つに揃っている():
-    """同じ文書の中で古い形式が残ると、そちらに従われる。"""
-    claude = (KIT / "template/CLAUDE.md.jinja").read_text(encoding="utf-8")
-    for line in claude.splitlines():
-        if "autopilot/<" in line:
-            assert "識別子" in line or "§3.5-1" in line, line
+def template_docs():
+    return sorted((KIT / "template").glob("*.jinja")) +            sorted((KIT / "template").glob("*.md"))
+
+
+def test_自走ブランチ名の規則が全文書で揃っている():
+    """CLAUDE だけ見ていて INITIAL_PROMPT の3箇所目を取りこぼした。
+
+    規則の原本は §3.5-1。他の文書は識別子込みの形式か、§3.5-1 への参照を持つ。
+    """
+    for path in template_docs():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "autopilot/" in line:
+                assert "識別子" in line or "§3.5-1" in line, f"{path.name}: {line}"
+
+
+def test_契約と矛盾するWIPコミット指示が残っていない():
+    """§3.5-6.5 は素性不明の変更のコミットを禁じるが、INITIAL_PROMPT が
+    「wip: としてコミット」を指示したまま残っていた。"""
+    for path in template_docs():
+        text = path.read_text(encoding="utf-8")
+        assert "wip:" not in text, f"{path.name} に WIP コミット指示が残っている"
 
 
 def test_規範番号が表と見出しで食い違わない():
@@ -111,10 +144,10 @@ def test_生成元参照の変種も残っていない():
     S2スロットに残っていた。表記ゆれごと検査する。
     """
     import re
-    for name in ("CLAUDE.md.jinja", "INCEPTION_PROMPT.md.jinja"):
-        text = (KIT / "template" / name).read_text(encoding="utf-8")
+    for path in template_docs():
+        text = path.read_text(encoding="utf-8")
         # `.` は既定で改行に一致しないので、同一行内の近接だけを見る
-        assert not re.search(r"生成元.{0,12}PROCESS\.md", text), name
+        assert not re.search(r"生成元.{0,12}PROCESS\.md", text), path.name
 
 
 def test_テンプレート依存はすべて固定されている():
@@ -123,3 +156,48 @@ def test_テンプレート依存はすべて固定されている():
         line = line.split("#")[0].strip()
         if line:
             assert "==" in line, f"固定されていない: {line}"
+
+
+def test_既定の保護集合がゲート本体を覆う():
+    """run_gates の BUILTIN・フック・CI・写しが protected.paths に入っている。
+
+    check_project_config.KIT_CORE との三者(テンプレート既定・KIT_CORE・BUILTIN)
+    のずれをここで検出する。
+    """
+    import re
+    template = (KIT / "template/project.yaml.jinja").read_text(encoding="utf-8")
+    core = (KIT / "template/scripts/check_project_config.py").read_text(encoding="utf-8")
+    run_gates = (KIT / "template/scripts/run_gates.py").read_text(encoding="utf-8")
+    kit_core = re.findall(r'^    "([^"]+)",$', core[core.index("KIT_CORE"):core.index("def glob_to_regex")], re.MULTILINE)
+    assert kit_core, "KIT_CORE を読めない"
+    for entry in kit_core:
+        assert f"- {entry}" in template, f"テンプレート既定に {entry} が無い"
+    for script in re.findall(r'Builtin\("[\w-]+", "([\w.]+)"', run_gates):
+        assert f"scripts/{script}" in kit_core, f"BUILTIN の {script} が KIT_CORE に無い"
+    for must in ("scripts/hooks/pre-commit", ".github/workflows/ci.yml",
+                 "docs/process/SHIOJI_PROCESS.md", "Makefile"):
+        assert must in kit_core, must
+
+
+def test_最新タグの版がCHANGELOGに見出しを持つ():
+    """「タグ済みなのに未リリース」を v0.2.0 / v0.2.1 で2回やった。機械で見る。"""
+    import subprocess
+    import pytest
+    proc = subprocess.run(["git", "tag", "--list", "v*", "--sort=-v:refname"],
+                          cwd=KIT, capture_output=True, text=True, encoding="utf-8")
+    tags = [t for t in (proc.stdout or "").split() if t]
+    if proc.returncode != 0 or not tags:
+        pytest.skip("タグを取得できない(浅いcloneなど)")
+    latest = tags[0]
+    changelog = (KIT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f"## [{latest[1:]}]" in changelog, (
+        f"タグ {latest} があるのに CHANGELOG に ## [{latest[1:]}] が無い"
+        " — タグ済みの内容を「未リリース」の下に置いたままにしない")
+
+
+def test_ゴールデンREADMEが同梱されている():
+    """CLAUDE.md が test/golden/README.md を参照する。宙に浮かせない。"""
+    readme = KIT / "template/test/golden/README.md"
+    assert readme.exists()
+    text = readme.read_text(encoding="utf-8")
+    assert "人間ゲート" in text and "blocked" in text

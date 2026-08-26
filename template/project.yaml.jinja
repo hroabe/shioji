@@ -71,6 +71,22 @@ protected:
     - verification/reference/**            # 参照オラクル(エージェント生成禁止)
     - test/golden/**                       # ゴールデン基準(同上)
     - requirements.txt                     # プロセス側の依存台帳
+    # --- ゲート本体。エージェントのコミットが no-op 化するのを早期検出する。
+    # ただし改変コミット自身が新しい検査を走らせるため、この検出は自己参照的で
+    # 素朴な改変にしか効かない。最終的な強制は CODEOWNERS + 必須レビュー(T-004)。
+    - Makefile                             # ローカル guard の入口
+    - scripts/run_gates.py
+    - scripts/check_project_config.py
+    - scripts/check_lifecycle.py
+    - scripts/check_protected_paths.py
+    - scripts/check_structure.py
+    - scripts/check_progress.py
+    - scripts/check_req_links.py
+    - scripts/validate_oracle.py
+    - scripts/migrate_config.py            # 更新経路(REQUIRED_SECTIONS)も装置の一部
+    - scripts/hooks/pre-commit
+    - .github/workflows/ci.yml
+    - docs/process/SHIOJI_PROCESS.md       # プロセス定義の写し(原本はキット)
 {% if stack == 'flutter' %}
     - pubspec.yaml                         # アプリ本体の依存台帳
 {% elif stack == 'node' %}

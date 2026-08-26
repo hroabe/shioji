@@ -126,3 +126,35 @@ def test_環境変数でも比較元を渡せる(project):
     project.commit("L0を書き換える")
     assert project.run("check_protected_paths.py",
                        env={"PROTECTED_BASE": "base"}).returncode == 1
+
+
+# --- ゲート本体の保護（v0.2.2 §3） -----------------------------------------
+
+def test_エージェントがゲート実行器を書き換えたら赤(project):
+    """run_gates.py を no-op 化すれば、以後の全ゲートが飛ぶ。"""
+    project.git_init()
+    project.write("scripts/run_gates.py", "print('OK: 全ゲート緑')" + chr(10))
+    project.commit("ゲートを軽くする")
+    r = check(project, "--base", "base")
+    assert r.returncode == 1
+    assert "run_gates.py" in out(r)
+
+
+def test_エージェントがフックやCIを書き換えたら赤(project):
+    project.git_init()
+    for rel in ("scripts/hooks/pre-commit", ".github/workflows/ci.yml",
+                "docs/process/SHIOJI_PROCESS.md", "Makefile"):
+        project.write(rel, "changed" + chr(10))
+    project.commit("装置一式を書き換える")
+    r = check(project, "--base", "base")
+    assert r.returncode == 1
+    text = out(r)
+    for rel in ("pre-commit", "ci.yml", "SHIOJI_PROCESS.md", "Makefile"):
+        assert rel in text, rel
+
+
+def test_人間ならゲート本体を直せる(project):
+    project.git_init()
+    project.write("scripts/run_gates.py", "# 人間の修正" + chr(10))
+    project.commit("ゲートのバグを直す", human=True)
+    assert check(project, "--base", "base").returncode == 0

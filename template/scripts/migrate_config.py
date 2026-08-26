@@ -36,7 +36,14 @@ REQUIRED_SECTIONS = {
     "protected": {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
-                  "verification/reference/**", "test/golden/**", "requirements.txt"],
+                  "verification/reference/**", "test/golden/**", "requirements.txt",
+                  "Makefile",
+                  "scripts/run_gates.py", "scripts/check_project_config.py",
+                  "scripts/check_lifecycle.py", "scripts/check_protected_paths.py",
+                  "scripts/check_structure.py", "scripts/check_progress.py",
+                  "scripts/check_req_links.py", "scripts/validate_oracle.py",
+                  "scripts/migrate_config.py", "scripts/hooks/pre-commit",
+                  ".github/workflows/ci.yml", "docs/process/SHIOJI_PROCESS.md"],
         "keys": ["lifecycle", "oracle", "protected", "structure", "progress"],
     },
     "structure": {
@@ -79,6 +86,17 @@ def ensure_sections(cfg: dict, notes: list) -> dict:
         cfg.setdefault("protected", {})["keys"] = keys + added
         notes.append(f"protected.keys に {added} を足した"
                      " — エージェントがこれらの設定を緩められないようにする")
+    # ゲート本体の保護パス。既存の独自パスは保持し、不足の中核だけを追記する。
+    # 上書きすると、プロジェクトが足した保護(独自の台帳など)が消えてしまう。
+    section = cfg.get("protected")
+    if isinstance(section, dict):
+        paths = list(section.get("paths") or [])
+        missing_paths = [x for x in REQUIRED_SECTIONS["protected"]["paths"]
+                         if x not in paths]
+        if missing_paths:
+            section["paths"] = paths + missing_paths
+            notes.append(f"protected.paths に不足の{len(missing_paths)}件を追記した"
+                         "(既存の独自パスは保持)")
     return cfg
 
 

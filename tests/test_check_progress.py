@@ -53,10 +53,11 @@ def test_確認の記録が無ければ赤(project):
 
 
 def test_確認の記録があれば緑(project):
+    """記録は人間のコミット(Agent: トレーラ無し)で入っていること。"""
     project.git_init()
     project.task("T-001", "done")
     project.write(LOG, entry("T-001"))
-    project.commit("T-001 を完了にする")
+    project.commit("T-001 を完了・実機確認", human=True)
     r = check(project, "--base", "base")
     assert r.returncode == 0
     assert "T-001" in out(r)
@@ -68,7 +69,7 @@ def test_別のエントリの確認では代用できない(project):
     project.task("T-001", "done")
     project.write(LOG, f"## T-009 の作業{NL}- 確認: 別のタスクを見た{NL}{NL}"
                        f"## T-001 の作業{NL}- 実装した{NL}")
-    project.commit("T-001 を完了にする")
+    project.commit("T-001 を完了にする", human=True)
     assert check(project, "--base", "base").returncode == 1
 
 
@@ -78,7 +79,7 @@ def test_同じエントリの中にあればよい(project):
     project.task("T-001", "done")
     project.write(LOG, f"## 2026-08-26 T-001 を完了{NL}- 実装した{NL}"
                        f"- 確認: 画面で操作して確かめた{NL}")
-    project.commit("T-001 を完了にする")
+    project.commit("T-001 を完了にする", human=True)
     assert check(project, "--base", "base").returncode == 0
 
 
@@ -96,7 +97,7 @@ def test_複数のタスクを一度に完了しても全部見る(project):
     project.task("T-001", "done")
     project.task("T-003", "done")
     project.write(LOG, entry("T-001"))
-    project.commit("2件を完了にする")
+    project.commit("2件を完了にする", human=True)
     r = check(project, "--base", "base")
     assert r.returncode == 1
     text = out(r)
@@ -124,7 +125,7 @@ def test_標識は設定で変えられる(project):
     project.config(progress={"marker": "verified:"})
     project.task("T-001", "done")
     project.write(LOG, f"## T-001{NL}- verified: 画面で見た{NL}")
-    project.commit("T-001 を完了にする")
+    project.commit("T-001 を完了にする", human=True)
     assert check(project, "--base", "base").returncode == 0
 
 
@@ -150,5 +151,64 @@ def test_タスクIDは語として照合する(project):
     project.git_init()
     project.task("T-001", "done")
     project.write(LOG, f"## T-0010 の作業{NL}- 確認: 別のタスクを見た{NL}")
-    project.commit("T-001 を完了にする")
+    project.commit("T-001 を完了にする", human=True)
     assert check(project, "--base", "base").returncode == 1
+
+
+# --- 確認の帰属（v0.2.2 目標6: 自由記入文字列だけに依存させない） ---------
+
+def test_エージェント自身の確認では通らない(project):
+    """記録は誰でも書ける文字列。誰のコミットで入ったかを見る。"""
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, entry("T-001"))
+    project.commit("T-001 完了・確認も書いた")          # Agent: トレーラ付き
+    r = check(project, "--base", "base")
+    assert r.returncode == 1
+    assert "エージェントのコミット" in out(r)
+
+
+def test_人間が確認の行だけ後から足せば緑(project):
+    """エージェントが3行記帳し、人間が確認行を別コミットで足す分担。"""
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, f"## 2026-08-26 T-001 を実装{NL}- 実装した{NL}")
+    project.commit("T-001 を実装して記帳")               # エージェント
+    project.write(LOG, f"## 2026-08-26 T-001 を実装{NL}- 実装した{NL}"
+                       f"- 確認: 画面で操作して確かめた{NL}")
+    project.commit("実機で確認した", human=True)          # 人間が確認行を追加
+    assert check(project, "--base", "base").returncode == 0
+
+
+def test_コミットされていない確認は数えない(project):
+    """作業ツリーの文字列は誰でも書ける。履歴に入って初めて痕跡になる。"""
+    project.git_init()
+    project.task("T-001", "done")
+    project.commit("T-001 を完了にする")
+    project.write(LOG, entry("T-001"))                    # 書いただけ・未コミット
+    assert check(project, "--base", "base").returncode == 1
+
+
+def test_人間の確認を後から消すと赤(project):
+    """帰属の集合は履歴に残り続ける。存在は現在のファイルで見る。"""
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, entry("T-001"))
+    project.commit("T-001 完了・実機確認", human=True)     # 人間が確認
+    project.write(LOG, "# からっぽ" + NL)
+    project.commit("記録を整理する")                        # エージェントが削除
+    r = check(project, "--base", "base")
+    assert r.returncode == 1
+    assert "削除" in out(r)
+
+
+def test_一度消しても人間が入れ直せば緑(project):
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, entry("T-001"))
+    project.commit("確認を記帳", human=True)
+    project.write(LOG, "# からっぽ" + NL)
+    project.commit("誤って消した")
+    project.write(LOG, entry("T-001"))
+    project.commit("確認を入れ直す", human=True)
+    assert check(project, "--base", "base").returncode == 0

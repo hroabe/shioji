@@ -187,3 +187,72 @@ def test_補うものが無ければ何もしない(project):
     r = project.run("migrate_config.py", "--write")
     assert r.returncode == 0
     assert "補うものはない" in out(r)
+
+
+# --- ディレクトリの封じ込め（v0.2.2 §2） -----------------------------------
+
+def test_予測先が相対パスでリポジトリの外なら赤(project):
+    project.replace("oracle", {**ORACLE, "predictions_dir": "../outside"})
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "外" in out(r)
+
+
+def test_予測先が絶対パスなら赤(project):
+    outside = str((project.root.parent / "outside").resolve())
+    project.replace("oracle", {**ORACLE, "predictions_dir": outside})
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "絶対パス" in out(r)
+
+
+def test_予測先がルートそのものなら赤(project):
+    project.replace("oracle", {**ORACLE, "predictions_dir": "."})
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "ルート" in out(r)
+
+
+def test_参照元も外を指せない(project):
+    project.replace("oracle", {**ORACLE, "reference_dir": "../outside"})
+    assert project.run("check_project_config.py").returncode == 1
+
+
+def test_正常な予測先は通る(project):
+    for good in (".verification/predictions", "verification/predictions"):
+        project.replace("oracle", {**ORACLE, "predictions_dir": good})
+        assert project.run("check_project_config.py").returncode == 0, good
+
+
+# --- ゲート本体の保護集合（v0.2.2 §3） -------------------------------------
+
+def test_保護集合からゲート本体を外すと赤(project):
+    cfg = project.read_config()
+    cfg["protected"]["paths"] = [x for x in cfg["protected"]["paths"]
+                                 if x != "scripts/run_gates.py"]
+    project.config(cfg)
+    r = project.run("check_project_config.py")
+    assert r.returncode == 1
+    assert "run_gates.py" in out(r)
+
+
+def test_globで覆っていれば個別列挙は不要(project):
+    cfg = project.read_config()
+    cfg["protected"]["paths"] = ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
+                                 "verification/reference/**", "test/golden/**",
+                                 "requirements.txt", "Makefile", "scripts/**",
+                                 ".github/workflows/ci.yml",
+                                 "docs/process/SHIOJI_PROCESS.md"]
+    project.config(cfg)
+    assert project.run("check_project_config.py").returncode == 0
+
+
+def test_移行は独自パスを保持して中核を追記する(project):
+    cfg = project.read_config()
+    cfg["protected"]["paths"] = ["CLAUDE.md", "data/ledger/**"]   # 独自の保護
+    project.config(cfg)
+    project.run("migrate_config.py", "--write")
+    paths = project.read_config()["protected"]["paths"]
+    assert "data/ledger/**" in paths          # 独自分は残る
+    assert "scripts/run_gates.py" in paths    # 中核は補われる
+    assert project.run("check_project_config.py").returncode == 0

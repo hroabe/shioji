@@ -8,6 +8,7 @@ run_gates.py は safe_load して即実行するため、誤設定は重い検�
 
 ゲート列の先頭に置き、fail-fast させる。
 """
+import pathlib
 import re
 import sys
 from pathlib import Path
@@ -201,6 +202,47 @@ def check_progress(errs: list, warns: list, progress) -> None:
                      "実機確認を免除した理由を DECISIONS に残すこと")
 
 
+# ゲートを構成するファイル。protected.paths がこれらを覆っていなければ赤。
+# ここに無い任意のプロジェクト用スクリプト(予測ハーネス等)は保護を強制しない。
+KIT_CORE = (
+    "Makefile",
+    "scripts/run_gates.py",
+    "scripts/check_project_config.py",
+    "scripts/check_lifecycle.py",
+    "scripts/check_protected_paths.py",
+    "scripts/check_structure.py",
+    "scripts/check_progress.py",
+    "scripts/check_req_links.py",
+    "scripts/validate_oracle.py",
+    "scripts/migrate_config.py",
+    "scripts/hooks/pre-commit",
+    ".github/workflows/ci.yml",
+    "docs/process/SHIOJI_PROCESS.md",
+)
+
+
+def glob_to_regex(pattern: str):
+    """check_protected_paths.py と同じ意味の glob。`**` は境界をまたぐ。"""
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
 def check_protected(errs: list, warns: list, protected) -> None:
     if not isinstance(protected, dict):
         errs.append("protected: マッピングにする(paths / keys / by_task)")
@@ -211,12 +253,45 @@ def check_protected(errs: list, warns: list, protected) -> None:
     elif not isinstance(paths, list) or not all(
             isinstance(x, str) and x.strip() for x in paths):
         errs.append("protected.paths: 非空の文字列リストにする")
+    if isinstance(paths, list):
+        matchers = [glob_to_regex(str(x)) for x in paths if isinstance(x, str)]
+        uncovered = [core for core in KIT_CORE
+                     if not any(rx.match(core) for rx in matchers)]
+        if uncovered:
+            errs.append("protected.paths: ゲート本体が保護されていない"
+                        f"({', '.join(uncovered)}) — これらを外すと、ゲートを"
+                        "no-op 化するコミットを検出できない")
     keys = protected.get("keys")
     if keys is not None and (not isinstance(keys, list) or not all(
             isinstance(x, str) for x in keys)):
         errs.append("protected.keys: 文字列リストにする(project.yaml の節名)")
     if "by_task" in protected and not str(protected["by_task"]).strip():
         errs.append("protected.by_task: 空にしない(未装備の期限)")
+
+
+def check_dir_inside(errs: list, key: str, raw: str):
+    """ディレクトリ指定がリポジトリの中に収まっているか。
+
+    予測の再生成は predictions_dir の *.csv を消してから行う。絶対パス・`..`・
+    シンボリックリンクで外を指せると、リポジトリの外のCSVを削除できてしまう。
+    pathlib は `ROOT / 絶対パス` で左辺を捨てるため、結合前に絶対パスを弾き、
+    結合後は resolve()（シンボリックリンクも辿る）でルート配下を確かめる。
+    """
+    path = pathlib.PurePath(raw)
+    if path.is_absolute() or raw.startswith(("/", "\\")):
+        errs.append(f"{key}: 絶対パスにしない({raw}) — リポジトリ外を指せる")
+        return None
+    resolved = (ROOT / raw).resolve()
+    root = ROOT.resolve()
+    if resolved == root:
+        errs.append(f"{key}: リポジトリルートそのものを指さない({raw})"
+                    " — ルート直下の *.csv が削除対象になる")
+        return None
+    if not resolved.is_relative_to(root):
+        errs.append(f"{key}: リポジトリの外を指している({raw} → {resolved})"
+                    " — 再生成が外部のCSVを削除してしまう")
+        return None
+    return resolved
 
 
 def check_oracle(errs: list, warns: list, oracle) -> None:
@@ -237,8 +312,9 @@ def check_oracle(errs: list, warns: list, oracle) -> None:
     # 同じファイルを参照とも予測とも読むことになり、必ず一致して緑になる。
     ref_dir, pred_dir = (str(oracle.get(k, "")).strip()
                          for k in ("reference_dir", "predictions_dir"))
-    if ref_dir and pred_dir:
-        r, p = (ROOT / ref_dir).resolve(), (ROOT / pred_dir).resolve()
+    r = check_dir_inside(errs, "oracle.reference_dir", ref_dir) if ref_dir else None
+    p = check_dir_inside(errs, "oracle.predictions_dir", pred_dir) if pred_dir else None
+    if r is not None and p is not None:
         if r == p or p.is_relative_to(r) or r.is_relative_to(p):
             errs.append("oracle.predictions_dir: reference_dir と同じ・入れ子にしない"
                         f"({pred_dir} / {ref_dir}) — 予測の再生成が参照オラクルを消し、"
