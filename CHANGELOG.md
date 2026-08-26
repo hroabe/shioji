@@ -14,7 +14,21 @@
 - Stage2: INCEPTION_PROMPT.md(壁打ち→提案生成→人間確定の台本)
 - kit-ci: ダミー実体化→生成直後に緑の検証(manual / flutter の2系統)
 
-## [未リリース] — パイロット還流(kenpo-keisan)
+## [未リリース]
+
+- **fix(docs): 規範カタログの番号衝突を直す(N6→N9)**。§6 の表は N6=商業倫理 を
+  定義済みで、v0.2.0 で追加した構造規範の見出しが同じ番号を名乗っていた。
+  構造規範は **N9** へ改番し、カタログ表に N9 の行を足した(標準装備)。
+  番号の重複はテストで検査する(tests/test_kit_consistency.py)
+- **fix(deps): template/requirements.txt の pyyaml を 6.0.2 に固定**。
+  再現性を要求する側が固定していなかった(P1-14 の残件)
+- **docs: PROCESS.md の front-matter を version 0.2 / 2026-08-26 に更新**
+- **docs: S2スロットと INCEPTION_PROMPT の参照を同梱の写しへ**(生成元参照の残り)
+
+注: v0.2.0 のタグに含まれる CHANGELOG は本節を「未リリース」表記のまま含む
+(タグ後の整理のため)。
+
+## [0.2.0] — 2026-08-26(タグ付け済み・人間承認) — パイロット還流(kenpo-keisan)より
 
 ### 破壊的変更 — project.yaml schema v2（0.2.0 への版上げを提案）
 
@@ -209,13 +223,13 @@ Git Bash に make がある環境で、フックが壊れた経路を選んで�
 kit-ci に `scripts-unit` ジョブ（Ubuntu / Windows）を足し、`required-checks` の
 依存に加えた。`lint-scripts` の対象に `tests` も含めた。
 
-### 構造規範（N6）と構造検査を追加
+### 構造規範（N9）と構造検査を追加
 
 文書は L0-L3 で統治され、仕様と実装の対応も検査されるのに、**コードの形には規範が
 無かった**。その空白では、1000行超の単一ファイルや、import した瞬間に実行が始まる
 テスト不能なエントリポイントが、何の抵抗もなく生まれる。
 
-`PROCESS.md` に **N6 構造規範** を起こし、`scripts/check_structure.py` を追加した。
+`PROCESS.md` に **N9 構造規範** を起こし、`scripts/check_structure.py` を追加した。
 規範の唯一の定義は `project.yaml` の `structure` 節で、散文で層やサイズを語らない。
 
 ```yaml

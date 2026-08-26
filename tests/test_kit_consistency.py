@@ -85,3 +85,41 @@ def test_自走ブランチ名の規則が1つに揃っている():
     for line in claude.splitlines():
         if "autopilot/<" in line:
             assert "識別子" in line or "§3.5-1" in line, line
+
+
+def test_規範番号が表と見出しで食い違わない():
+    """v0.2.0 で実際に起きた。表は N6=商業倫理 を定義済みなのに、
+    構造規範の見出しが N6 を名乗り、同じ §6 に別内容の N6 が2つ並んだ。
+
+    表の番号は一意であること。見出し(### Nx 名前)は、表の同じ番号の行と
+    名前が一致すること(見出しは表の項目の詳説である)。
+    """
+    import re
+    text = (KIT / "PROCESS.md").read_text(encoding="utf-8")
+    rows = re.findall(r"^\| (N\d+) \| (\S+) \|", text, re.MULTILINE)
+    numbers = [n for n, _ in rows]
+    assert len(numbers) == len(set(numbers)), f"表の番号が重複: {numbers}"
+    table = dict(rows)
+    for number, name in re.findall(r"^### (N\d+) (\S+)", text, re.MULTILINE):
+        assert number in table, f"見出し {number} {name} が表に無い"
+        assert table[number] == name, (
+            f"見出し {number} {name} と表の {number} {table[number]} が食い違う")
+
+
+def test_生成元参照の変種も残っていない():
+    """「生成元の PROCESS.md」は塞いだが「生成元 PROCESS.md §6」(の抜き)が
+    S2スロットに残っていた。表記ゆれごと検査する。
+    """
+    import re
+    for name in ("CLAUDE.md.jinja", "INCEPTION_PROMPT.md.jinja"):
+        text = (KIT / "template" / name).read_text(encoding="utf-8")
+        # `.` は既定で改行に一致しないので、同一行内の近接だけを見る
+        assert not re.search(r"生成元.{0,12}PROCESS\.md", text), name
+
+
+def test_テンプレート依存はすべて固定されている():
+    """再現性を要求する側が固定していない、を繰り返さない(P1-14)。"""
+    for line in (KIT / "template/requirements.txt").read_text(encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            assert "==" in line, f"固定されていない: {line}"

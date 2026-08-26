@@ -37,7 +37,7 @@ REQUIRED_SECTIONS = {
         "by_task": "T-004",
         "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
                   "verification/reference/**", "test/golden/**", "requirements.txt"],
-        "keys": ["oracle", "protected", "structure", "progress"],
+        "keys": ["lifecycle", "oracle", "protected", "structure", "progress"],
     },
     "structure": {
         "by_task": "T-005",
