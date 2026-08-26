@@ -12,6 +12,13 @@
 
 どちらの向きにも赤があるのが要点で、片方だけだと「段階を進めない」または
 「段階だけ進める」で回避できてしまう。
+
+**実装の検出は設定に依存させない。** `layers.src` を別の場所へ向ける、
+`scan_ext` を狭める、`stack.ready_marker` を存在しないパスにする、のいずれでも
+実装が見えなくなる。設定はエージェントが提案できる（`stack` の調整は
+CLAUDE.md §4 で認められている）ため、検出方針を設定から読むと、
+弱めるコミット自身が弱めたあとの方針で検査される（PROCESS.md §5-17 の2）。
+固定のディレクトリ名とマニフェスト名を併せて見る。
 """
 import sys
 from pathlib import Path
@@ -19,6 +26,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 UNARMED = 3                       # 未装備(run_gates.py が「緑」と区別して数える)
 PHASES = ("inception", "development")
+
+# 実装が始まったことを示す固定の手がかり。設定で狭められないようにする。
+SOURCE_DIRS = ("src", "lib", "app")
+MANIFESTS = ("pubspec.yaml", "package.json", "pyproject.toml", "setup.py",
+             "Cargo.toml", "go.mod", "build.gradle", "build.gradle.kts")
+IGNORED = {".gitkeep", ".gitignore"}
 
 
 def use_utf8() -> None:
@@ -41,25 +54,40 @@ def load_config() -> dict:
 
 
 def source_files(cfg: dict) -> list:
-    """実装層にあるソースファイル。段階の判定に使う。"""
+    """実装が始まっていることを示すファイル。
+
+    設定の layers.src だけを見ると、そこを別の場所へ向けるだけで実装が
+    見えなくなる。固定のディレクトリ名を併せて見る。拡張子でも絞らない
+    （scan_ext を狭めれば同じ回避ができるため）。
+    """
     layers = cfg.get("layers") or {}
-    exts = {str(e) for e in (cfg.get("scan_ext") or [])}
+    names = {str(n) for n in (layers.get("src") or [])} | set(SOURCE_DIRS)
     out = []
-    for name in (layers.get("src") or []):
-        base = ROOT / str(name)
+    for name in sorted(names):
+        base = ROOT / name
         if not base.is_dir():
             continue
         out += [p for p in base.rglob("*")
-                if p.is_file() and (not exts or p.suffix in exts)]
+                if p.is_file() and p.name not in IGNORED
+                and not p.name.startswith(".")
+                and "__pycache__" not in p.parts]
     return out
+
+
+def manifests(cfg: dict) -> list:
+    """依存台帳。設定の ready_marker だけでなく、既知の名前も見る。"""
+    marker = str((cfg.get("stack") or {}).get("ready_marker") or "").strip()
+    names = set(MANIFESTS) | ({marker} if marker else set())
+    return sorted(n for n in names if (ROOT / n).exists())
 
 
 def check_inception(cfg: dict, errs: list) -> None:
     """仕様を決める段階。実装が始まっていたら赤。"""
-    marker = str((cfg.get("stack") or {}).get("ready_marker") or "").strip()
-    if marker and (ROOT / marker).exists():
-        errs.append(f"インセプション中に {marker} がある — スタックの初期化は"
-                    "インセプション完了後(lifecycle.phase を development にする)")
+    found = manifests(cfg)
+    if found:
+        errs.append(f"インセプション中に依存台帳がある({', '.join(found)}) —"
+                    " スタックの初期化はインセプション完了後"
+                    "(lifecycle.phase を development にする)")
     files = source_files(cfg)
     if files:
         sample = ", ".join(p.relative_to(ROOT).as_posix() for p in files[:3])

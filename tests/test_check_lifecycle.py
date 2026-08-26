@@ -100,3 +100,38 @@ def test_移行スクリプトが補う(project):
     cfg = project.read_config()
     assert cfg["lifecycle"]["phase"] == "inception"
     assert "lifecycle" in cfg["protected"]["keys"]
+
+
+# --- 検出方針を設定で弱められないこと（§5-17 の2） -------------------------
+
+def test_layers_srcを別の場所へ向けても実装は見える(project):
+    """設定を書き換えるだけで実装が見えなくなってはいけない。"""
+    project.replace("lifecycle", {"phase": "inception"})
+    project.write("src/app.py", "x = 1" + NL)
+    project.config(layers={"src": ["nowhere"], "test": ["tests"]})
+    r = check(project)
+    assert r.returncode == 1
+    assert "src/app.py" in out(r)
+
+
+def test_scan_extを狭めても実装は見える(project):
+    project.replace("lifecycle", {"phase": "inception"})
+    project.write("src/app.py", "x = 1" + NL)
+    project.config(scan_ext=[".md"])
+    assert check(project).returncode == 1
+
+
+def test_ready_markerを別の名前にしても依存台帳は見える(project):
+    project.replace("lifecycle", {"phase": "inception"})
+    project.write("pyproject.toml", "")
+    project.config(stack={"ready_marker": "nowhere.toml"})
+    r = check(project)
+    assert r.returncode == 1
+    assert "pyproject.toml" in out(r)
+
+
+def test_空のディレクトリや置き石は実装とみなさない(project):
+    """生成直後の src/ や .gitkeep で赤にしない。"""
+    project.replace("lifecycle", {"phase": "inception"})
+    project.write("src/.gitkeep", "")
+    assert check(project).returncode == 0

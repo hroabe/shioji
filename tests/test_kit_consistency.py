@@ -67,3 +67,20 @@ def test_未使用のimportが無い():
             bad += [f"{path.name}:{line} {name}"
                     for name, line in imported.items() if name not in used]
     assert not bad, bad
+
+
+def test_生成先の契約が同梱の写しを指す():
+    """生成先に PROCESS.md は出ない。生成元を参照させない。"""
+    claude = (KIT / "template/CLAUDE.md.jinja").read_text(encoding="utf-8")
+    assert "docs/process/SHIOJI_PROCESS.md" in claude
+    assert "生成元の PROCESS.md" not in claude
+    assert not (KIT / "template/PROCESS.md").exists()
+
+
+def test_自走ブランチ名の規則が1つに揃っている():
+    """同じ文書の中で古い形式が残ると、そちらに従われる。"""
+    import re
+    claude = (KIT / "template/CLAUDE.md.jinja").read_text(encoding="utf-8")
+    for line in claude.splitlines():
+        if "autopilot/<" in line:
+            assert "識別子" in line or "§3.5-1" in line, line
