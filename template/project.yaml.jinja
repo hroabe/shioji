@@ -79,14 +79,13 @@ protected:
 # make guard / pre-commit / CI guardrails が同一列を実行する。
 # argv 形式で、shell を経由しない。project.yaml はエージェントが編集できるため、
 # そこに書かれた文字列をシェルに解釈させない。複雑な処理は scripts/*.py へ置く。
-# 設定検査(scripts/check_project_config.py)はここに書かない。
+# 設定検査と保護パス検査(scripts/check_project_config.py /
+# scripts/check_protected_paths.py)はここに書かない。
 # run_gates.py が gates 列より前に無条件で実行する。設定を検査する仕組みを、
 # 設定から消せる場所に置かないため。
 gates:
   - id: req-links
     argv: [python, scripts/check_req_links.py]
-  - id: protected
-    argv: [python, scripts/check_protected_paths.py]
   - id: oracle
     argv: [python, scripts/validate_oracle.py, --dry-run]
     cutover:                               # T-003 が done になったら自動で --gate へ切り替える

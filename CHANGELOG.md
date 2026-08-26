@@ -113,7 +113,17 @@ protected:
   強制は GitHub の CODEOWNERS + 必須レビューが担う。T-004 を新設した
 - CODEOWNERS は同梱しない。GitHub は解決できない owner を黙って無視するため、
   プレースホルダ入りで配ると「設定済みに見えて効いていない」状態を作ることになる
-- 生成CIの `guardrails` に `fetch-depth: 0` を追加(浅いクローンでは比較元を解決できない)
+- 保護パス検査は `run_gates.py` の**組み込み**。`gates` 列には書かない
+  (その行を消すコミット自身が素通りしてしまうため。設定検査と同じ理由)
+- **保護方針は base の版から読む。** 現在の `project.yaml` から読むと、方針を
+  弱めるコミット自身が弱めたあとの方針で検査され、緑になってしまう
+- 保護節の変更はコミットとその親を比べる。base から最終形をまとめて比べると、
+  人間の変更をエージェントの違反として数えてしまう
+- `protected.by_task` の期限を `run_gates.py` が見る
+- 生成CIの `guardrails` に `fetch-depth: 0` を追加(浅いクローンでは比較元を解決できない)。
+  push では `github.event.before` を `PROTECTED_BASE` として渡す
+  (push では checkout が origin の既定ブランチ参照を HEAD へ進めるため、
+  そのままだと `base..HEAD` が空になり何も検査されない)
 
 ### 破壊的変更 — requirements.txt への新規依存追加を人間ゲートへ（同上・0.2.0）
 

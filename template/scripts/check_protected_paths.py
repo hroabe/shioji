@@ -98,38 +98,59 @@ def base_ref(argv: list) -> str | None:
     return None
 
 
-def changed_keys(base: str, keys: list) -> list:
-    """project.yaml の人間専管の節が base から変わっているか。
+def config_at(ref: str) -> dict | None:
+    """指定の版の project.yaml を読む。無ければ None。"""
+    text = git("show", f"{ref}:project.yaml")
+    if text is None:
+        return None
+    try:
+        import yaml
+        return yaml.safe_load(text) or {}
+    except Exception:
+        return None
 
-    project.yaml はパス単位では保護できない。gates への行追加や stack の調整は
-    エージェントの提案が認められている一方、oracle の許容値や protected の定義は
-    人間専管だからである。エージェントが自分を縛る設定を緩められることが、
-    ここで一番避けたい事態になる。
+
+def policy(base: str) -> tuple[list, list, str]:
+    """保護方針は base(信頼できる版)から読む。
+
+    現在の project.yaml から読むと、方針を弱めるコミット自身が、弱めたあとの
+    方針で検査されてしまう。paths を1つ消し keys を空にすれば、その変更を含めて
+    緑になる。方針を base に固定すれば、弱めても当のコミットは弾かれる。
+
+    base に protected が無い場合(方針の新規導入)だけ、現在の値を使う。
+    """
+    cfg = config_at(base) or {}
+    old = cfg.get("protected") or {}
+    if old.get("paths"):
+        return ([str(x) for x in old["paths"]],
+                [str(k) for k in (old.get("keys") or [])],
+                f"{base} の方針")
+    cur = load_config().get("protected") or {}
+    return ([str(x) for x in (cur.get("paths") or [])],
+            [str(k) for k in (cur.get("keys") or [])],
+            "現在の方針(base に protected が無い — 新規導入)")
+
+
+def changed_keys(sha: str, keys: list) -> list:
+    """このコミット単体で、人間専管の節が変わったか。
+
+    base から最終形をまとめて比べると、人間が oracle を直しエージェントが stack を
+    直しただけで、人間の変更をエージェントの違反として数えてしまう。
+    コミットとその親を比べ、そのコミットが変えたものだけを見る。
     """
     if not keys:
         return []
-    old_text = git("show", f"{base}:project.yaml")
-    if old_text is None:
-        return []                      # base に project.yaml が無い — 比較しない
-    try:
-        import yaml
-        old = yaml.safe_load(old_text) or {}
-    except Exception:
+    parent = git("rev-parse", "--verify", "--quiet", f"{sha}^")
+    new = config_at(sha)
+    if new is None or parent is None:
         return []
-    new = load_config()
+    old = config_at(parent) or {}
     return [k for k in keys if old.get(k) != new.get(k)]
 
 
 def main() -> int:
     use_utf8()
     argv = sys.argv[1:]
-    protected = (load_config().get("protected") or {})
-    patterns = [str(p) for p in (protected.get("paths") or [])]
-    keys = [str(k) for k in (protected.get("keys") or [])]
-    if not patterns:
-        print("保護パス: 未装備(project.yaml の protected.paths が空)")
-        return UNARMED
-
     if git("rev-parse", "--git-dir") is None:
         print("保護パス: 未装備(gitリポジトリではない)")
         return UNARMED
@@ -139,6 +160,11 @@ def main() -> int:
         print("    --base か PROTECTED_BASE で明示できる")
         return UNARMED
 
+    patterns, keys, source = policy(base)
+    if not patterns:
+        print("保護パス: 未装備(protected.paths が空)")
+        return UNARMED
+
     commits = (git("log", "--format=%H", f"{base}..HEAD") or "").split()
     if not commits:
         print(f"保護パス: {base} からの新しいコミットなし — 対象なし")
@@ -146,22 +172,18 @@ def main() -> int:
 
     matchers = [(p, to_regex(p)) for p in patterns]
     hits, human = [], []
-    agent_touched_config = False
     for sha in commits:
         files = (git("diff-tree", "--no-commit-id", "--name-only", "-r", sha) or "").splitlines()
         message = git("log", "-1", "--format=%B", sha) or ""
         by_agent = bool(AGENT_TRAILER.search(message))
-        if by_agent and "project.yaml" in files:
-            agent_touched_config = True
         for path in files:
             for pattern, rx in matchers:
                 if rx.match(path):
                     (hits if by_agent else human).append((sha[:7], path, pattern))
                     break
-
-    if agent_touched_config:
-        for key in changed_keys(base, keys):
-            hits.append(("project.yaml", f"{key} 節", "protected.keys"))
+        if by_agent and "project.yaml" in files:
+            for key in changed_keys(sha, keys):
+                hits.append((sha[:7], f"project.yaml の {key} 節", "protected.keys"))
 
     for sha, path, pattern in human:
         print(f"  人間のコミット {sha}: {path}(保護 {pattern})")
@@ -178,8 +200,8 @@ def main() -> int:
               "反映は人間が行うこと(CLAUDE.md §5)", file=sys.stderr)
         return 1
 
-    print(f"OK: 保護パス{len(patterns)}件 / {base}..HEAD の{len(commits)}コミットに"
-          "エージェントによる変更なし")
+    print(f"OK: 保護パス{len(patterns)}件({source}) / {base}..HEAD の"
+          f"{len(commits)}コミットにエージェントによる変更なし")
     return 0
 
 

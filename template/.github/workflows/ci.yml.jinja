@@ -16,6 +16,20 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
+      # push では GITHUB_BASE_REF が空で、checkout が origin の既定ブランチ参照を
+      # HEAD と同じ位置へ進めるため、base..HEAD が空になり何も検査されない。
+      # push 前のSHAを比較元として渡す。
+      # このファイルは copier(Jinja2)が描画するため、GitHub の ${'{{'} ... {'}}'} 式は
+      # 書けない(Jinja2 に解釈されてしまう)。環境変数だけで書く。
+      - name: 保護パス検査の比較元を決める
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            before=$(jq -r '.before // ""' "$GITHUB_EVENT_PATH")
+            zero=0000000000000000000000000000000000000000
+            if [ -n "$before" ] && [ "$before" != "$zero" ] && git cat-file -e "$before^{commit}"; then
+              echo "PROTECTED_BASE=$before" >> "$GITHUB_ENV"
+            fi
+          fi
       # 未装備のゲートは gate_status.json と Job Summary に出る。
       # ここで --strict を使わないのは、0日目は oracle も stack も未装備であり、
       # 生成直後の main が赤になってしまうため(0日目から緑の原則)。
