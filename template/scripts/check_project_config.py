@@ -331,6 +331,14 @@ def main() -> int:
             if not isinstance(value, list) or not value:
                 errs.append(f"layers.{key}: 非空のリストにする")
 
+    # キットが要求する節。copier update は project.yaml を上書きしないため、
+    # 欠けたまま新しいスクリプトだけが入ると、増えたゲートは未装備のまま
+    # 期限も持たず、guard は永久に緑になる。
+    for name in ("protected", "structure", "progress"):
+        if cfg.get(name) is None:
+            errs.append(f"{name}: 必須の節が無い"
+                        " — python scripts/migrate_config.py --write で補える")
+
     check_gates(errs, cfg.get("gates"))
     if cfg.get("protected") is not None:
         check_protected(errs, warns, cfg["protected"])

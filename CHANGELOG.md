@@ -284,6 +284,25 @@ progress:
   文書全体で見ると別のタスクの確認で代用できてしまうので、エントリ単位にした
 - `run_gates.py` の**組み込み**。`progress` を `protected.keys` に加え、
   エージェントが実機確認の要求を外せないようにした
+- タスクIDは**語として**照合する。部分一致だと `T-001` が `T-0010` の記録で通る
+
+### 既存プロジェクトの更新手順（重要）
+
+`copier update` は `project.yaml` を上書きしない（生成後プロジェクトの所有物）。
+そのため **`copier update` だけではスクリプトが新しくなるだけで、増えた節
+（`protected` / `structure` / `progress`）は入りません。** その状態では増えた
+ゲートが未装備のまま**期限も持たず**、非strict の guard は永久に緑になります。
+
+```bash
+copier update                          # スクリプトを更新
+python scripts/migrate_config.py       # 何が補われるかを確認
+python scripts/migrate_config.py --write
+python scripts/run_gates.py --all      # 補われた節の中身を確認して緑にする
+```
+
+`migrate_config.py` は**版が合っていても**欠けた節を既定値で補い、
+`protected.keys` の要素も足します。設定検査は必須の節が欠けていれば赤にし、
+移行スクリプトを案内します。
 
 ### 組み込みゲートを表に整理
 

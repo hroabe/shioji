@@ -143,3 +143,12 @@ def test_期限のタスクがdoneなら未装備は赤(project):
     r = project.gates()
     assert r.returncode == 1
     assert "T-004" in out(r)
+
+
+def test_タスクIDは語として照合する(project):
+    """T-001 が T-0010 の記録で通ってしまう部分一致を防ぐ。"""
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, f"## T-0010 の作業{NL}- 確認: 別のタスクを見た{NL}")
+    project.commit("T-001 を完了にする")
+    assert check(project, "--base", "base").returncode == 1

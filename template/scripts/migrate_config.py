@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""project.yaml を v1 から v2 へ移行する(潮路キット)。
+"""project.yaml を新しい版へ合わせる(潮路キット)。
 
 project.yaml は「生成後プロジェクト側の所有物」で copier update が上書き
-しないため、schema_version を上げても既存プロジェクトは自動では移行しない。
-移行手段を用意しないと、v1 のまま取り残される。
+しないため、キットが節を増やしても既存プロジェクトには入らない。
+`copier update` でスクリプトだけが新しくなり、設定が古いままだと、増えた
+ゲートは未装備のまま**期限も持たない**。非strictの guard は永久に緑になる。
+移行手段を用意しないと、それに気づけない。
 
 v1 -> v2 の差分:
   req_prefix          -> requirements.prefix
@@ -12,7 +14,10 @@ v1 -> v2 の差分:
   gates[].cutover.cmd -> gates[].cutover.argv
   stack.analyze/test  -> argv のリスト
   (追加) schema_version: 2 / stack.by_task
-  (除去) gates 内の設定検査・保護パス検査 — run_gates.py の組み込みになったため
+  (除去) gates 内の組み込みゲート — run_gates.py が実行するため
+
+版に関わらず、キットが要求する節が欠けていれば既定値で補う:
+  protected / structure / progress と、protected.keys の要素
 
   引数なし : 変換結果を標準出力に出す(ファイルは変更しない)
   --write  : project.yaml を上書きする
@@ -23,6 +28,56 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "project.yaml"
+
+# キットが要求する節の既定値。欠けていれば補う。
+# ここに無い値（層の設計など）はプロジェクトが決めるものなので空で入れる。
+REQUIRED_SECTIONS = {
+    "protected": {
+        "by_task": "T-004",
+        "paths": ["CLAUDE.md", "AGENTS.md", "docs/spec/**",
+                  "verification/reference/**", "test/golden/**", "requirements.txt"],
+        "keys": ["oracle", "protected", "structure", "progress"],
+    },
+    "structure": {
+        "by_task": "T-005",
+        "max_file_lines": 400,
+        "max_function_lines": 60,
+        "exclude": ["**/*.g.dart", "**/*_generated.*",
+                    "**/node_modules/**", "**/.venv/**"],
+        "layers": [], "pure_modules": [], "pure_exempt": [], "pure_allow_calls": [],
+    },
+    "progress": {
+        "by_task": "T-004",
+        "file": "docs/L3/PROGRESS.md",
+        "task_index": "TASK_INDEX.md",
+        "marker": "確認:",
+        "exempt": [],
+    },
+}
+PROTECTED_KEYS = ("oracle", "protected", "structure", "progress")
+
+
+def ensure_sections(cfg: dict, notes: list) -> dict:
+    """キットが要求する節を補う。既にある値は変えない。
+
+    `copier update` は project.yaml を上書きしないため、ここで補わないと
+    増えたゲートが未装備のまま期限も持たず、guard は緑のままになる。
+    """
+    for name, default in REQUIRED_SECTIONS.items():
+        if name not in cfg:
+            cfg[name] = dict(default)
+            notes.append(f"{name} 節を既定値で補った — 中身を確認すること")
+        elif isinstance(cfg[name], dict) and not str(cfg[name].get("by_task", "")).strip():
+            cfg[name]["by_task"] = default["by_task"]
+            notes.append(f"{name}.by_task が無いので {default['by_task']} を入れた"
+                         " — TASK_INDEX の実在タスクに合わせること")
+    keys = list((cfg.get("protected") or {}).get("keys") or [])
+    added = [k for k in PROTECTED_KEYS if k in cfg and k not in keys]
+    if added:
+        cfg.setdefault("protected", {})["keys"] = keys + added
+        notes.append(f"protected.keys に {added} を足した"
+                     " — エージェントがこれらの設定を緩められないようにする")
+    return cfg
 
 
 def to_argv(value) -> list:
@@ -129,12 +184,15 @@ def main() -> int:
         sys.exit("ERROR: project.yaml がない")
 
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8")) or {}
-    if cfg.get("schema_version") == 2:
-        print("project.yaml は既に v2 — 移行するものはない")
-        return 0
-
     notes: list[str] = []
-    out = migrate(cfg, notes)
+    if cfg.get("schema_version") == 2:
+        # 版は合っていても、キットが後から増やした節は入っていない。
+        out = ensure_sections(dict(cfg), notes)
+        if not notes:
+            print("project.yaml は最新 — 補うものはない")
+            return 0
+    else:
+        out = ensure_sections(migrate(cfg, notes), notes)
     text = yaml.safe_dump(out, allow_unicode=True, sort_keys=False, width=100)
 
     if "--write" in sys.argv[1:]:

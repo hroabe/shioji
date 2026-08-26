@@ -28,6 +28,7 @@ NEWLINE = chr(10)
 
 # 表の行: | T-001 | タスク | REQ | 依存 | 担当 | status |
 TASK_ROW = re.compile(r"^\|\s*(T-\d+)\s*\|.*\|\s*([A-Za-z]+)\s*\|\s*$")
+TASK_ID = re.compile(r"T-\d+")
 
 
 def use_utf8() -> None:
@@ -137,8 +138,12 @@ def main() -> int:
     # 同じ行に限ると書式と噛み合わず、文書全体で見ると別のタスクの確認で
     # 代用できてしまう。
     entries = sections(log.read_text(encoding="utf-8") if log.exists() else "")
-    missing = [t for t in newly
-               if not any(t in block and marker in block for block in entries)]
+    # タスクIDは語として照合する。部分一致だと T-001 が T-0010 の記録で通る。
+    confirmed = set()
+    for block in entries:
+        if marker in block:
+            confirmed |= set(TASK_ID.findall(block))
+    missing = [t for t in newly if t not in confirmed]
 
     for task in newly:
         mark = "×" if task in missing else "○"

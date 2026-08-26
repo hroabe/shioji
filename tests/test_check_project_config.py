@@ -144,3 +144,46 @@ def test_予測先が参照と同じなら赤(project):
 def test_予測先が参照の入れ子でも赤(project):
     project.replace("oracle", {**ORACLE, "predictions_dir": "verification/reference/pred"})
     assert project.run("check_project_config.py").returncode == 1
+
+
+# --- copier update で入らない節 -------------------------------------------
+
+def test_必須の節が欠けていたら移行を促して赤(project):
+    """copier update は project.yaml を上書きしない。
+
+    スクリプトだけ新しくなると、増えたゲートは未装備のまま期限も持たず、
+    guard は永久に緑になる。
+    """
+    for name in ("protected", "structure", "progress"):
+        project.config(dict(project.read_config()))
+        project.replace(name, None)
+        r = project.run("check_project_config.py")
+        assert r.returncode == 1, name
+        assert "migrate_config" in out(r)
+        project.replace(name, {"by_task": "T-004"})
+
+
+def test_移行スクリプトが欠けた節を補う(project):
+    project.replace("progress", None)
+    project.replace("structure", None)
+    assert project.run("check_project_config.py").returncode == 1
+    r = project.run("migrate_config.py", "--write")
+    assert r.returncode == 0
+    assert "補った" in out(r)
+    cfg = project.read_config()
+    assert cfg["progress"]["by_task"] and cfg["structure"]["by_task"]
+    assert project.run("check_project_config.py").returncode == 0
+
+
+def test_移行スクリプトはprotected_keysも補う(project):
+    project.config(protected={"keys": ["oracle"]})
+    project.run("migrate_config.py", "--write")
+    keys = project.read_config()["protected"]["keys"]
+    for name in ("protected", "structure", "progress"):
+        assert name in keys
+
+
+def test_補うものが無ければ何もしない(project):
+    r = project.run("migrate_config.py", "--write")
+    assert r.returncode == 0
+    assert "補うものはない" in out(r)
