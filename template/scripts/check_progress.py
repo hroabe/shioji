@@ -177,7 +177,12 @@ def main() -> int:
             agent_confirmed |= gained
         else:
             human_confirmed |= gained
-    missing = [t for t in newly if t not in human_confirmed]
+    # 帰属は履歴で、存在は現在のファイルで見る。履歴だけだと、人間の確認を
+    # 後から削除しても集合に残り続け、記録が無いのに通ってしまう。
+    current = confirmed_in(log.read_text(encoding="utf-8") if log.exists() else "",
+                           marker)
+    missing = [t for t in newly
+               if t not in human_confirmed or t not in current]
 
     for task in newly:
         mark = "×" if task in missing else "○"
@@ -186,9 +191,12 @@ def main() -> int:
         print(f"NG: done にしたのに実機確認の記録が無いタスクが{len(missing)}件",
               file=sys.stderr)
         for task in missing:
-            why = ("確認の記録がエージェントのコミットで追加されている"
-                   if task in agent_confirmed else
-                   f"「{marker}」を含むエントリが(コミット済みの履歴に)無い")
+            if task in human_confirmed and task not in current:
+                why = "人間の確認はあったが、記録が後から削除されている"
+            elif task in agent_confirmed and task in current:
+                why = "確認の記録がエージェントのコミットで追加されている"
+            else:
+                why = f"「{marker}」を含むエントリが(コミット済みの履歴に)無い"
             print(f"  - {task}: {rel} — {why}", file=sys.stderr)
         if set(missing) & agent_confirmed:
             print("  確認の記帳は Agent: トレーラの無いコミットで行う"

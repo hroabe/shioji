@@ -187,3 +187,28 @@ def test_コミットされていない確認は数えない(project):
     project.commit("T-001 を完了にする")
     project.write(LOG, entry("T-001"))                    # 書いただけ・未コミット
     assert check(project, "--base", "base").returncode == 1
+
+
+def test_人間の確認を後から消すと赤(project):
+    """帰属の集合は履歴に残り続ける。存在は現在のファイルで見る。"""
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, entry("T-001"))
+    project.commit("T-001 完了・実機確認", human=True)     # 人間が確認
+    project.write(LOG, "# からっぽ" + NL)
+    project.commit("記録を整理する")                        # エージェントが削除
+    r = check(project, "--base", "base")
+    assert r.returncode == 1
+    assert "削除" in out(r)
+
+
+def test_一度消しても人間が入れ直せば緑(project):
+    project.git_init()
+    project.task("T-001", "done")
+    project.write(LOG, entry("T-001"))
+    project.commit("確認を記帳", human=True)
+    project.write(LOG, "# からっぽ" + NL)
+    project.commit("誤って消した")
+    project.write(LOG, entry("T-001"))
+    project.commit("確認を入れ直す", human=True)
+    assert check(project, "--base", "base").returncode == 0
