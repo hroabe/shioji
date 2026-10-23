@@ -1,7 +1,7 @@
 # 潮路キット自身のCI — 実体化テストが本キットの精度ゲート(CLAUDE.md 3項)。
 # ダミープロジェクト「sazanami」を copier で実体化し、生成直後に全ゲートが
 # 緑であること(0日目から緑の原則 — PROCESS.md §3)を毎pushで検証する。
-name: kit-ci
+name: テンプレート生成・検証スクリプトのテスト
 on: [push, pull_request]
 jobs:
   # OS を跨ぐのは、テンプレートが Windows ネイティブ対応を明記しているのに
